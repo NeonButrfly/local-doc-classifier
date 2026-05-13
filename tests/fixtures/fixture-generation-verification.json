@@ -1,0 +1,14 @@
+{
+  "pdf_rendered_pages": 1,
+  "docx_rendered_pages": 1,
+  "xlsx_inspect_table": "{\"kind\":\"table\",\"sheet\":\"Budget Forecast\",\"address\":\"A1:K7\",\"rows\":7,\"cols\":11,\"values\":[[\"Department\",\"Category\",\"Q1 Actual\",\"Q2 Forecast\",\"Q3 Forecast\",\"Q4 Forecast\",\"FY Forecast\",\"Variance Note\",null,\"Metric\",\"Value\"],[\"Operations\",\"Cloud Hosting\",12500,13800,14200,15100,55600,\"Synthetic hosting growth\",null,\"Total FY Forecast\",127250],[\"Operations\",\"Monitoring Tools\",4200,4300,4400,4500,17400,\"Stable renewal\",null,\"Largest Category\",\"Cloud Hosting\"],[\"Security\",\"Training\",3000,5200,2500,2500,13200,\"Mock annual campaign\",null,\"Budget Review\",\"Synthetic\"],[\"Security\",\"Pen Test\",0,0,18000,0,18000,\"Synthetic one-time assessment\",null,\"Expected Label\",\"financial or spreadsheet\"],[\"Facilities\",\"Lab Equipment\",8800,3100,2200,2100,16200,\"Demo hardware refresh\",null,\"Contains Real Data\",\"No\"],[\"Facilities\",\"Maintenance\",1600,1700,1750,1800,6850,\"Routine synthetic maintenance\",null,null,null]]}",
+  "xlsx_error_scan": "{\"kind\":\"notice\",\"message\":\"Cell search matched 0 entries.\"}",
+  "fixture_set": "v1.0.2-diverse-no-fsa-spf",
+  "created_files": [
+    "tests/fixtures/expected-labels.json",
+    "tests/fixtures/synthetic_network_incident_report.docx",
+    "tests/fixtures/synthetic_quarterly_budget_forecast.xlsx",
+    "tests/fixtures/synthetic_snowy_industrial_waystation_reference.jpg",
+    "tests/fixtures/synthetic_vendor_service_agreement.pdf"
+  ]
+}

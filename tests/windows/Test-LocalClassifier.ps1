@@ -1,13 +1,22 @@
 param(
   [string]$Server = "192.168.50.196",
-  [string]$TestDir = "C:\Code\TestAI",
+  [string]$RepoRoot = "",
   [string]$Token = "",
-  [switch]$FetchTokenOverSsh
+  [switch]$FetchTokenOverSsh,
+  [switch]$SkipAssertions
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+  $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+}
+
 $ApiBase = "http://${Server}:4319"
-$OutDir = Join-Path $TestDir "_classifier-test-results"
+$FixtureDir = Join-Path $RepoRoot "tests\fixtures"
+$OutDir = Join-Path $RepoRoot "tests\_classifier-test-results"
+$ExpectedPath = Join-Path $FixtureDir "expected-labels.json"
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($Token) -and $FetchTokenOverSsh) {
@@ -18,7 +27,75 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
   $Token = Read-Host "Paste CLASSIFIER_API_TOKEN"
 }
 
+function Get-MimeType {
+  param([string]$Path)
+  $Ext = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
+  switch ($Ext) {
+    ".pdf"  { return "application/pdf" }
+    ".docx" { return "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }
+    ".doc"  { return "application/msword" }
+    ".xlsx" { return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+    ".xls"  { return "application/vnd.ms-excel" }
+    ".png"  { return "image/png" }
+    ".jpg"  { return "image/jpeg" }
+    ".jpeg" { return "image/jpeg" }
+    ".webp" { return "image/webp" }
+    ".bmp"  { return "image/bmp" }
+    ".tif"  { return "image/tiff" }
+    ".tiff" { return "image/tiff" }
+    default { return "application/octet-stream" }
+  }
+}
+
+function Assert-Classification {
+  param(
+    [string]$FixtureName,
+    [object]$Response,
+    [object]$Expected
+  )
+
+  if ($SkipAssertions) { return }
+
+  if ($Response.ok -ne $true) {
+    throw "Fixture ${FixtureName} failed classification API call."
+  }
+
+  if (-not $Response.record.classification.primary_label) {
+    throw "Fixture ${FixtureName} produced no primary_label."
+  }
+
+  $primary = [string]$Response.record.classification.primary_label
+  $secondary = @($Response.record.classification.secondary_labels)
+
+  if ($Expected.acceptable_primary_labels -and ($Expected.acceptable_primary_labels -notcontains $primary)) {
+    throw "Fixture ${FixtureName} primary_label '$primary' not in acceptable list: $($Expected.acceptable_primary_labels -join ', ')"
+  }
+
+  if ($Expected.forbidden_primary_labels -and ($Expected.forbidden_primary_labels -contains $primary)) {
+    throw "Fixture ${FixtureName} primary_label '$primary' is forbidden."
+  }
+
+  if ($Expected.expected_secondary_any) {
+    $hit = $false
+    foreach ($label in $Expected.expected_secondary_any) {
+      if ($secondary -contains $label -or $primary -eq $label) {
+        $hit = $true
+        break
+      }
+    }
+    if (-not $hit) {
+      throw "Fixture ${FixtureName} did not include any expected secondary label. Expected one of: $($Expected.expected_secondary_any -join ', '). Got primary='$primary', secondary='$($secondary -join ', ')'"
+    }
+  }
+}
+
 Write-Host "Testing classifier API at ${ApiBase}" -ForegroundColor Cyan
+Write-Host "Repo root: ${RepoRoot}" -ForegroundColor Cyan
+Write-Host "Fixture dir: ${FixtureDir}" -ForegroundColor Cyan
+
+if (-not (Test-Path $FixtureDir)) {
+  throw "Fixture directory not found: ${FixtureDir}"
+}
 
 $healthRaw = curl.exe -sS -H "X-API-Key: $Token" "${ApiBase}/health"
 $healthPath = Join-Path $OutDir "health.json"
@@ -31,106 +108,52 @@ if (-not $health.ok) {
 
 Write-Host "Health OK. Ollama OK: $($health.ollama_ok)" -ForegroundColor Green
 
-$ImageExts = @("*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.tif", "*.tiff")
-$PdfExts = @("*.pdf")
-$WordExts = @("*.docx", "*.doc")
+$expectedDoc = Get-Content $ExpectedPath -Raw | ConvertFrom-Json
+$results = @()
 
-function Get-FirstMatchingFile {
-  param([string]$Root, [string[]]$Patterns)
-  foreach ($Pattern in $Patterns) {
-    $Found = Get-ChildItem -Path $Root -Filter $Pattern -File -Recurse |
-      Where-Object { $_.FullName -notlike "*_classifier-test-results*" } |
-      Sort-Object LastWriteTime -Descending |
-      Select-Object -First 1
-    if ($Found) { return $Found }
-  }
-  return $null
-}
-
-function Get-MimeType {
-  param([string]$Path)
-  $Ext = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
-  switch ($Ext) {
-    ".pdf"  { return "application/pdf" }
-    ".docx" { return "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }
-    ".doc"  { return "application/msword" }
-    ".png"  { return "image/png" }
-    ".jpg"  { return "image/jpeg" }
-    ".jpeg" { return "image/jpeg" }
-    ".webp" { return "image/webp" }
-    ".bmp"  { return "image/bmp" }
-    ".tif"  { return "image/tiff" }
-    ".tiff" { return "image/tiff" }
-    default { return "application/octet-stream" }
-  }
-}
-
-function Test-Upload {
-  param([string]$Kind, [System.IO.FileInfo]$File)
-
-  if (-not $File) {
-    Write-Host "SKIP ${Kind}: no matching file found under ${TestDir}" -ForegroundColor Yellow
-    return $null
+foreach ($fixture in $expectedDoc.fixtures) {
+  $filePath = Join-Path $FixtureDir $fixture.file
+  if (-not (Test-Path $filePath)) {
+    throw "Missing fixture: $filePath"
   }
 
-  $Mime = Get-MimeType -Path $File.FullName
-  $SafeName = $Kind.ToLowerInvariant()
-  $ResponsePath = Join-Path $OutDir "${SafeName}-upload-response.json"
+  $mime = Get-MimeType -Path $filePath
+  $responsePath = Join-Path $OutDir "$($fixture.kind)-upload-response.json"
 
-  Write-Host "Uploading ${Kind}: $($File.FullName)" -ForegroundColor Cyan
+  Write-Host "Uploading $($fixture.kind): $filePath" -ForegroundColor Cyan
 
-  $ResponseRaw = curl.exe -sS `
+  $responseRaw = curl.exe -sS `
     -H "X-API-Key: $Token" `
-    -F "file=@$($File.FullName);filename=$($File.Name);type=${Mime}" `
+    -F "file=@$filePath;filename=$($fixture.file);type=${mime}" `
     "${ApiBase}/classify/upload"
 
-  $ResponseRaw | Set-Content -Encoding UTF8 $ResponsePath
+  $responseRaw | Set-Content -Encoding UTF8 $responsePath
+  $response = $responseRaw | ConvertFrom-Json
 
-  try {
-    $Response = $ResponseRaw | ConvertFrom-Json
-  } catch {
-    Write-Host "FAIL ${Kind}: response was not JSON. See ${ResponsePath}" -ForegroundColor Red
-    return $null
-  }
-
-  if ($Response.ok -eq $true) {
-    Write-Host "PASS ${Kind}: classified successfully" -ForegroundColor Green
-    if ($Response.record.note_path) {
-      Write-Host "Note: $($Response.record.note_path)" -ForegroundColor Green
-    }
-    if ($Response.record.classification.primary_label) {
-      Write-Host "Label: $($Response.record.classification.primary_label) Confidence: $($Response.record.classification.confidence)" -ForegroundColor Green
-    }
+  if ($response.ok -eq $true) {
+    $label = $response.record.classification.primary_label
+    $confidence = $response.record.classification.confidence
+    $note = $response.record.note_path
+    Write-Host "PASS upload: $($fixture.file) => $label confidence=$confidence" -ForegroundColor Green
+    Write-Host "Note: $note" -ForegroundColor Green
   } else {
-    Write-Host "FAIL ${Kind}: classifier returned ok=false. See ${ResponsePath}" -ForegroundColor Red
-    if ($Response.record.error) {
-      Write-Host "Error: $($Response.record.error)" -ForegroundColor Red
-    }
-    if ($Response.stderr_tail) {
-      Write-Host "stderr_tail: $($Response.stderr_tail)" -ForegroundColor DarkYellow
-    }
+    Write-Host "FAIL upload: $($fixture.file)" -ForegroundColor Red
+    if ($response.record.error) { Write-Host "Error: $($response.record.error)" -ForegroundColor Red }
+    if ($response.stderr_tail) { Write-Host "stderr_tail: $($response.stderr_tail)" -ForegroundColor DarkYellow }
   }
 
-  return $Response
+  Assert-Classification -FixtureName $fixture.file -Response $response -Expected $fixture
+  $results += $response
 }
 
-$ImageFile = Get-FirstMatchingFile -Root $TestDir -Patterns $ImageExts
-$PdfFile = Get-FirstMatchingFile -Root $TestDir -Patterns $PdfExts
-$WordFile = Get-FirstMatchingFile -Root $TestDir -Patterns $WordExts
+$recentPath = Join-Path $OutDir "recent.json"
+curl.exe -sS -H "X-API-Key: $Token" "${ApiBase}/recent?limit=10" | Set-Content -Encoding UTF8 $recentPath
 
-$Results = @()
-$Results += Test-Upload -Kind "Image" -File $ImageFile
-$Results += Test-Upload -Kind "PDF" -File $PdfFile
-$Results += Test-Upload -Kind "Word" -File $WordFile
-
-$RecentPath = Join-Path $OutDir "recent.json"
-curl.exe -sS -H "X-API-Key: $Token" "${ApiBase}/recent?limit=10" | Set-Content -Encoding UTF8 $RecentPath
-
-$IndexPath = Join-Path $OutDir "classification-index.md"
-curl.exe -sS -H "X-API-Key: $Token" "${ApiBase}/index?max_chars=30000" | Set-Content -Encoding UTF8 $IndexPath
+$indexPath = Join-Path $OutDir "classification-index.md"
+curl.exe -sS -H "X-API-Key: $Token" "${ApiBase}/index?max_chars=30000" | Set-Content -Encoding UTF8 $indexPath
 
 Write-Host ""
 Write-Host "Done. Results saved to: ${OutDir}" -ForegroundColor Cyan
 Write-Host "Health: ${healthPath}"
-Write-Host "Recent: ${RecentPath}"
-Write-Host "Index: ${IndexPath}"
+Write-Host "Recent: ${recentPath}"
+Write-Host "Index: ${indexPath}"

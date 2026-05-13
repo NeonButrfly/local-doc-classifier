@@ -1,0 +1,107 @@
+{
+  "fixtures": [
+    {
+      "file": "synthetic_vendor_service_agreement.pdf",
+      "kind": "pdf-legal",
+      "acceptable_primary_labels": [
+        "legal",
+        "contract",
+        "policy",
+        "work"
+      ],
+      "expected_secondary_any": [
+        "legal",
+        "contract",
+        "policy",
+        "work"
+      ],
+      "forbidden_primary_labels": [
+        "receipt",
+        "invoice",
+        "reimbursement-packet",
+        "reference-image",
+        "medical",
+        "identity-document"
+      ]
+    },
+    {
+      "file": "synthetic_network_incident_report.docx",
+      "kind": "word-technical",
+      "acceptable_primary_labels": [
+        "technical",
+        "work",
+        "report",
+        "policy"
+      ],
+      "expected_secondary_any": [
+        "technical",
+        "work",
+        "report",
+        "policy"
+      ],
+      "forbidden_primary_labels": [
+        "receipt",
+        "invoice",
+        "legal",
+        "reference-image",
+        "medical",
+        "identity-document"
+      ]
+    },
+    {
+      "file": "synthetic_quarterly_budget_forecast.xlsx",
+      "kind": "spreadsheet-financial",
+      "acceptable_primary_labels": [
+        "financial",
+        "spreadsheet",
+        "work",
+        "report"
+      ],
+      "expected_secondary_any": [
+        "financial",
+        "spreadsheet",
+        "work",
+        "report"
+      ],
+      "forbidden_primary_labels": [
+        "reference-image",
+        "concept-art",
+        "legal",
+        "medical",
+        "identity-document"
+      ]
+    },
+    {
+      "file": "synthetic_snowy_industrial_waystation_reference.jpg",
+      "kind": "image-reference",
+      "acceptable_primary_labels": [
+        "reference-image",
+        "concept-art",
+        "environment-art",
+        "image-only"
+      ],
+      "expected_secondary_any": [
+        "concept-art",
+        "environment-art",
+        "industrial",
+        "sci-fi",
+        "snow-ice",
+        "facility",
+        "waystation",
+        "architecture"
+      ],
+      "forbidden_primary_labels": [
+        "receipt",
+        "invoice",
+        "legal",
+        "medical",
+        "insurance",
+        "tax",
+        "financial",
+        "identity-document",
+        "technical",
+        "marketing"
+      ]
+    }
+  ]
+}

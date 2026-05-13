@@ -21,3 +21,25 @@ taxonomy-router-report.json
 taxonomy-router.joblib
 corrections.jsonl
 examples.jsonl
+
+# Test results
+tests/_classifier-test-results/
+_classifier-test-results/
+
+# Avoid committing accidental real files elsewhere
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tif
+*.tiff
+*.bmp
+
+# Allow committed synthetic fixtures only
+!tests/fixtures/
+!tests/fixtures/**
