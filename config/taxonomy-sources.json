@@ -1,0 +1,59 @@
+[
+  {
+    "name": "openimages_boxable",
+    "enabled": true,
+    "kind": "vision",
+    "parser": "csv_last_column",
+    "url": "https://storage.googleapis.com/openimages/2018_04/class-descriptions-boxable.csv",
+    "max_labels": 1000
+  },
+  {
+    "name": "openimages_all_descriptions",
+    "enabled": true,
+    "kind": "vision",
+    "parser": "csv_last_column",
+    "url": "https://storage.googleapis.com/openimages/2018_04/class-descriptions.csv",
+    "max_labels": 25000
+  },
+  {
+    "name": "google_product_taxonomy",
+    "enabled": true,
+    "kind": "product",
+    "parser": "google_product_taxonomy",
+    "url": "https://www.google.com/basepages/producttype/taxonomy.en-US.txt",
+    "max_labels": 10000
+  },
+  {
+    "name": "iab_content_taxonomy_v3_1",
+    "enabled": true,
+    "kind": "content",
+    "parser": "iab_tsv",
+    "url": "https://raw.githubusercontent.com/InteractiveAdvertisingBureau/Taxonomies/main/Content%20Taxonomies/Content%20Taxonomy%203.1.tsv",
+    "max_labels": 10000
+  },
+  {
+    "name": "doclaynet_static",
+    "enabled": true,
+    "kind": "document",
+    "parser": "static",
+    "labels": [
+      "financial-reports",
+      "scientific-articles",
+      "laws-and-regulations",
+      "government-tenders",
+      "manuals",
+      "patents",
+      "caption",
+      "footnote",
+      "formula",
+      "list-item",
+      "page-footer",
+      "page-header",
+      "picture",
+      "section-header",
+      "table",
+      "text",
+      "title"
+    ]
+  }
+]

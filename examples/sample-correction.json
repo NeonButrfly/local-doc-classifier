@@ -1,0 +1,19 @@
+{
+  "filename": "snowy-industrial-waystation-reference.jpg",
+  "extension": ".jpg",
+  "kind": "image",
+  "old_label": "technical",
+  "correct_label": "reference-image",
+  "secondary_labels": [
+    "concept-art",
+    "environment-art",
+    "industrial",
+    "sci-fi",
+    "snow-ice",
+    "facility",
+    "waystation",
+    "architecture"
+  ],
+  "note": "Snowy futuristic industrial facility / waystation image. This is visual reference or concept/environment art, not a technical document.",
+  "summary": "Futuristic snowy industrial facility with pipes and machinery."
+}

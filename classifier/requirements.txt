@@ -1,0 +1,13 @@
+docling
+requests
+pandas
+openpyxl
+python-magic
+pillow
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+joblib
+numpy
+scikit-learn

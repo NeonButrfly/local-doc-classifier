@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="${APP_DIR:-/opt/local-doc-classifier}"
+
+case "${1:-status}" in
+  sync)
+    python3 "${APP_DIR}/sync-public-categories.py"
+    ;;
+  status)
+    cat "${APP_DIR}/config/taxonomy-sync-report.json" 2>/dev/null || echo "No sync report yet."
+    ;;
+  list)
+    sed -n '1,200p' "${APP_DIR}/config/categories.txt"
+    ;;
+  count)
+    wc -l "${APP_DIR}/config/categories.txt" "${APP_DIR}/config/categories.full.txt" 2>/dev/null || true
+    ;;
+  sources)
+    cat "${APP_DIR}/config/taxonomy-sources.json"
+    ;;
+  log)
+    journalctl -u local-doc-classifier-taxonomy-sync.service -n 100 --no-pager
+    ;;
+  *)
+    echo "Usage: ${APP_DIR}/taxcat sync|status|list|count|sources|log"
+    exit 2
+    ;;
+esac

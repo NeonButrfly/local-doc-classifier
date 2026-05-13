@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="${APP_DIR:-/opt/local-doc-classifier}"
+cd "${APP_DIR}"
+
+cmd="${1:-help}"
+shift || true
+
+case "${cmd}" in
+  up)
+    docker compose up -d ollama
+    docker compose --profile init run --rm model-init
+    ;;
+
+  build)
+    docker compose build classifier
+    ;;
+
+  classify)
+    docker compose --profile tools run --rm classifier "$@"
+    ;;
+
+  classify-input)
+    docker compose --profile tools run --rm classifier /input "$@"
+    ;;
+
+  self-test)
+    docker compose --profile tools run --rm classifier --self-test
+    ;;
+
+  logs)
+    docker compose logs -f "$@"
+    ;;
+
+  ps)
+    docker compose ps
+    ;;
+
+  down)
+    docker compose down
+    ;;
+
+  restart)
+    docker compose restart ollama api
+    ;;
+
+  shell)
+    docker compose --profile tools run --rm --entrypoint /bin/bash classifier
+    ;;
+
+  *)
+    cat <<HELP
+Local Document Classifier
+
+Usage:
+  ${APP_DIR}/docclass up
+  ${APP_DIR}/docclass build
+  ${APP_DIR}/docclass self-test
+  ${APP_DIR}/docclass classify-input --attach-originals
+  ${APP_DIR}/docclass logs
+  ${APP_DIR}/docclass ps
+  ${APP_DIR}/docclass down
+HELP
+    ;;
+esac
