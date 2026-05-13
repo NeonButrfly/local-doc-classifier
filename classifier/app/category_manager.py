@@ -291,3 +291,87 @@ def select_candidate_categories(all_categories: List[str], filename: str, extens
         add(label)
 
     return selected[:max_labels] or ["unknown", "needs-review"]
+
+# --- final image-reference correction policy BEGIN ---
+# Last definition wins. This prevents snowy/industrial/concept/reference images
+# from landing in marketing or technical.
+
+def normalize_image_classification_result(result: dict) -> dict:
+    primary = str(result.get("primary_label", "")).lower()
+    secondary = [str(x).lower() for x in (result.get("secondary_labels", []) or [])]
+    summary = str(result.get("summary", "")).lower()
+    reason = str(result.get("reason", "")).lower()
+    text = f"{summary} {reason}"
+
+    visual_reference_terms = [
+        "snowy", "snow", "industrial", "facility", "futuristic", "sci-fi",
+        "sci fi", "pipes", "machinery", "way station", "waystation",
+        "environment", "concept", "reference", "architecture", "exterior",
+        "structures", "frozen", "night sky"
+    ]
+
+    true_marketing_terms = [
+        "advertisement", "advertising", "brand campaign", "sale", "coupon",
+        "promotion", "product listing", "catalog", "retail"
+    ]
+
+    true_technical_terms = [
+        "ui", "user interface", "terminal", "code", "error message",
+        "schematic", "manual", "spreadsheet", "configuration", "log file"
+    ]
+
+    looks_visual_reference = any(term in text for term in visual_reference_terms)
+    looks_true_marketing = any(term in text for term in true_marketing_terms)
+    looks_true_technical = any(term in text for term in true_technical_terms)
+
+    if primary in {"technical", "marketing"} and looks_visual_reference and not looks_true_marketing and not looks_true_technical:
+        result["primary_label"] = "reference-image"
+        result["secondary_labels"] = [
+            "concept-art",
+            "environment-art",
+            "industrial",
+            "sci-fi",
+            "snow-ice",
+            "facility",
+            "waystation",
+            "architecture"
+        ]
+        result["reason"] = (
+            "Auto-corrected from marketing/technical: the visible content is a snowy "
+            "industrial sci-fi waystation/facility reference image, not a marketing item "
+            "or technical document."
+        )
+        return result
+
+    if primary == "marketing" and "image-only" in secondary and looks_visual_reference:
+        result["primary_label"] = "reference-image"
+        result["secondary_labels"] = [
+            "concept-art",
+            "environment-art",
+            "industrial",
+            "sci-fi",
+            "snow-ice",
+            "facility",
+            "waystation",
+            "architecture"
+        ]
+        result["reason"] = "Auto-corrected from marketing/image-only: this is visual environment/reference art."
+        return result
+
+    if primary == "technical" and "image-only" in secondary and looks_visual_reference:
+        result["primary_label"] = "reference-image"
+        result["secondary_labels"] = [
+            "concept-art",
+            "environment-art",
+            "industrial",
+            "sci-fi",
+            "snow-ice",
+            "facility",
+            "waystation",
+            "architecture"
+        ]
+        result["reason"] = "Auto-corrected from technical/image-only: this is visual environment/reference art."
+        return result
+
+    return result
+# --- final image-reference correction policy END ---

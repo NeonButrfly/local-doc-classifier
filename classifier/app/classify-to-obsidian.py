@@ -384,6 +384,16 @@ def write_obsidian_note(
     classification: Dict[str, Any],
     attach_originals: bool,
 ) -> Path:
+    # --- image-normalize-before-note BEGIN ---
+    try:
+        if source_path.suffix.lower() in IMAGE_EXTENSIONS:
+            from category_manager import normalize_image_classification_result
+            classification = normalize_image_classification_result(classification)
+    except Exception:
+        pass
+    # --- image-normalize-before-note END ---
+
+
     primary = str(classification.get("primary_label", "unknown") or "unknown")
     secondary = classification.get("secondary_labels", []) or []
     confidence_raw = classification.get("confidence", 0)
