@@ -37,6 +37,10 @@ IMAGE_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"
 }
 
+SPREADSHEET_EXTENSIONS = {
+    ".xlsx"
+}
+
 PLAIN_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".csv"
 }
@@ -162,8 +166,184 @@ def parse_with_docling(path: Path) -> str:
     result = converter.convert(str(path))
     return result.document.export_to_markdown()
 
+def parse_spreadsheet_fast(
+    path: Path,
+    max_sheets: int = 4,
+    max_rows: int = 8,
+    max_cols: int = 8,
+    max_cell_chars: int = 80,
+) -> tuple[str, str, Dict[str, Any]]:
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(path, data_only=False, read_only=True)
+    sheet_summaries: List[Dict[str, Any]] = []
+    non_empty_preview_cells = 0
+
+    for worksheet in workbook.worksheets[:max_sheets]:
+        preview_rows: List[List[str]] = []
+
+        for row_index, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+            if row_index > max_rows:
+                break
+
+            values: List[str] = []
+            has_value = False
+
+            for cell in row[:max_cols]:
+                value = "" if cell is None else str(cell).strip().replace("\n", " ")
+                value = value[:max_cell_chars]
+                if value:
+                    has_value = True
+                    non_empty_preview_cells += 1
+                values.append(value)
+
+            if has_value:
+                preview_rows.append(values)
+
+        sheet_summaries.append(
+            {
+                "title": worksheet.title,
+                "preview_rows": preview_rows,
+            }
+        )
+
+    lines = [
+        "# Spreadsheet Summary",
+        f"Workbook: {path.name}",
+        f"Sheet count: {len(workbook.sheetnames)}",
+    ]
+
+    for sheet in sheet_summaries:
+        lines.append("")
+        lines.append(f"## Sheet: {sheet['title']}")
+
+        preview_rows = sheet["preview_rows"]
+        if not preview_rows:
+            lines.append("- No preview rows with visible values.")
+            continue
+
+        for row in preview_rows[:6]:
+            cells = [cell for cell in row if cell]
+            if cells:
+                lines.append(f"- {' | '.join(cells)}")
+
+    markdown = "\n".join(lines).strip()
+    metadata = {
+        "sheet_count": len(workbook.sheetnames),
+        "sheet_names": workbook.sheetnames[:max_sheets],
+        "preview_sheet_count": len(sheet_summaries),
+        "non_empty_preview_cells": non_empty_preview_cells,
+    }
+    return markdown, "spreadsheet-openpyxl", metadata
+
+def classify_spreadsheet_fast(
+    source_path: Path,
+    categories: List[str],
+    markdown: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> tuple[str, Dict[str, Any], Dict[str, Any]]:
+    if markdown is None or metadata is None:
+        markdown, parser_name, metadata = parse_spreadsheet_fast(source_path)
+        metadata["parser"] = parser_name
+    else:
+        metadata = dict(metadata)
+        metadata.setdefault("parser", "spreadsheet-openpyxl")
+
+    text = f"{source_path.name}\n{markdown}".lower()
+    available = set(categories)
+
+    def score(*keywords: str) -> int:
+        return sum(1 for keyword in keywords if keyword in text)
+
+    domain_scores = {
+        "financial": score(
+            "budget", "forecast", "variance", "quarter", "fy forecast",
+            "actual", "cost", "expense", "revenue", "payment", "department"
+        ),
+        "tax": score("tax", "irs", "1099", "w-2", "withholding", "deduction"),
+        "legal": score("agreement", "contract", "terms", "effective date", "vendor"),
+        "medical": score("patient", "medical", "diagnosis", "provider", "prescription"),
+        "insurance": score("insurance", "claim", "coverage", "premium", "policy"),
+        "technical": score("incident", "network", "server", "uptime", "ticket", "configuration"),
+    }
+
+    primary = "spreadsheet" if "spreadsheet" in available else None
+
+    if domain_scores["tax"] >= 2 and "tax" in available:
+        primary = "tax"
+    elif domain_scores["medical"] >= 2 and "medical" in available:
+        primary = "medical"
+    elif domain_scores["insurance"] >= 2 and "insurance" in available:
+        primary = "insurance"
+    elif domain_scores["legal"] >= 2 and "legal" in available:
+        primary = "legal"
+    elif domain_scores["technical"] >= 3 and "technical" in available:
+        primary = "technical"
+    elif primary is None and domain_scores["financial"] >= 2 and "financial" in available:
+        primary = "financial"
+
+    if primary is None:
+        for fallback in ["financial", "work", "report", "unknown", "needs-review"]:
+            if fallback in available:
+                primary = fallback
+                break
+        primary = primary or "unknown"
+
+    secondary: List[str] = []
+    for label in ["spreadsheet", "financial", "work", "report", "tax", "legal", "medical", "insurance", "technical"]:
+        if label != primary and label in available:
+            if label == "financial" and domain_scores["financial"] == 0:
+                continue
+            if label == "technical" and domain_scores["technical"] < 2:
+                continue
+            if label in {"tax", "legal", "medical", "insurance"} and domain_scores[label] == 0:
+                continue
+            secondary.append(label)
+
+    secondary = secondary[:4]
+
+    sensitive_flags = [
+        label
+        for label in ["financial", "tax", "legal", "medical", "insurance"]
+        if domain_scores.get(label, 0) > 0
+    ] or ["none"]
+
+    confidence = 0.98 if primary == "spreadsheet" else 0.94
+    sheet_names = ", ".join(metadata.get("sheet_names", [])[:3]) or "workbook preview"
+    reason_parts = [
+        "Fast spreadsheet path used to avoid slow OCR/LLM processing.",
+        f"Detected workbook structure across {metadata.get('sheet_count', 0)} sheet(s): {sheet_names}.",
+    ]
+    if domain_scores["financial"] > 0:
+        reason_parts.append("Budget and forecast terms indicate financial spreadsheet content.")
+
+    classification = {
+        "primary_label": primary,
+        "secondary_labels": secondary,
+        "confidence": confidence,
+        "summary": (
+            f"Spreadsheet workbook preview with {metadata.get('sheet_count', 0)} sheet(s), "
+            f"including {sheet_names}."
+        ),
+        "reason": " ".join(reason_parts),
+        "sensitive_flags": sensitive_flags,
+        "recommended_action": "keep",
+        "file_date_guess": "unknown",
+        "language": "English",
+        "candidate_categories_used": [
+            label
+            for label in ["spreadsheet", "financial", "work", "report", "tax", "legal", "medical", "insurance", "technical", "unknown", "needs-review"]
+            if label in available
+        ],
+    }
+    return markdown, classification, metadata
+
 def parse_document(path: Path, work_dir: Path) -> tuple[str, str]:
     ext = path.suffix.lower()
+
+    if ext in SPREADSHEET_EXTENSIONS:
+        markdown, parser_name, _ = parse_spreadsheet_fast(path)
+        return markdown, parser_name
 
     if ext in PLAIN_EXTENSIONS:
         return parse_plain_text(path), "plain-text"
@@ -665,6 +845,29 @@ def main() -> int:
                         ollama_url=args.ollama_url,
                         vision_model=args.vision_model,
                         timing=timing,
+                    )
+                elif ext in SPREADSHEET_EXTENSIONS:
+                    parse_started_at = time.perf_counter()
+                    markdown, parser_name, spreadsheet_metadata = parse_spreadsheet_fast(source_path)
+                    timing["parse_ms"] = elapsed_ms(parse_started_at)
+                    timing["parser"] = parser_name
+                    timing["model_ms"] = 0.0
+                    timing["classifier"] = "heuristic-spreadsheet-fast-path"
+                    timing["candidate_category_count"] = len(
+                        [
+                            label
+                            for label in ["spreadsheet", "financial", "work", "report", "tax", "legal", "medical", "insurance", "technical", "unknown", "needs-review"]
+                            if label in categories
+                        ]
+                    )
+                    timing["markdown_chars"] = len(markdown)
+                    timing["clipped_markdown_chars"] = len(markdown)
+                    timing["sheet_count"] = spreadsheet_metadata.get("sheet_count", 0)
+                    markdown, classification, spreadsheet_metadata = classify_spreadsheet_fast(
+                        source_path=source_path,
+                        categories=categories,
+                        markdown=markdown,
+                        metadata=spreadsheet_metadata,
                     )
                 else:
                     parse_started_at = time.perf_counter()
