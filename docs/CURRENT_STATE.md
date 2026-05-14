@@ -1,6 +1,6 @@
 # Current State Snapshot
 
-Updated from the 2026-05-13 takeover and validation pass.
+Updated from the 2026-05-13 takeover, deployment repair, and live validation pass.
 
 ## Repo state
 
@@ -9,11 +9,15 @@ Updated from the 2026-05-13 takeover and validation pass.
 - Regression coverage for the snowy industrial waystation policy lives in `tests/test_image_label_policy.py`.
 - GitHub tracking for this fix is in issue `#1`.
 
-## Deployment status before rebuild
+## Deployment status
 
-- The live API at `http://192.168.50.196:4319` returned healthy Ollama status during takeover.
-- The live API was still serving an older application build because `/categories` returned `404 Not Found` even though the current repo source exposes that endpoint.
-- A Linux home clone at `~/local-doc-classifier` was missing, so the desired GitHub -> Linux clone -> `/opt/local-doc-classifier` deployment flow needed to be restored.
+- The Linux home clone at `~/local-doc-classifier` has been restored from GitHub and is now the deployment source for `/opt/local-doc-classifier`.
+- `scripts/install-or-update.sh` now handles the available Docker Compose packaging on the Ubuntu Questing host.
+- Repeated installs now replace deployed source directories cleanly instead of nesting stale code under `/opt/local-doc-classifier`.
+- The classifier image now preloads the RapidOCR runtime weights needed for Docling-based document parsing.
+- The live API at `http://192.168.50.196:4319` now returns healthy `/health`, working `/categories`, and working `/corrections`.
+- The committed synthetic PDF, DOCX, XLSX, and JPG fixtures all uploaded successfully through the live API after the rebuild.
+- GitHub issues `#1`, `#2`, `#3`, and `#4` were updated with validation evidence and closed after verification.
 
 ## Known caution
 
@@ -23,3 +27,4 @@ Updated from the 2026-05-13 takeover and validation pass.
 - API token should be rotated after testing.
 - If Docker images are pruned, rebuild local images before starting API.
 - If `/categories` returns `404`, the deployed API image is stale relative to repo source and must be rebuilt from the current checkout.
+- If a future deploy regresses document uploads, verify that the classifier image still includes the RapidOCR preloaded weights before debugging the API layer.
