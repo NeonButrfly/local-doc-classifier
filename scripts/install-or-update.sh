@@ -10,7 +10,25 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 apt-get update
-apt-get install -y docker.io docker-compose-plugin curl jq git openssl
+
+packages=(docker.io curl jq git openssl)
+
+# Ubuntu package names for Docker Compose vary by release, and some hosts
+# already have a working `docker compose` command.
+if ! docker compose version >/dev/null 2>&1; then
+  if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+    packages+=(docker-compose-plugin)
+  elif apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    packages+=(docker-compose-v2)
+  fi
+fi
+
+apt-get install -y "${packages[@]}"
+
+if ! docker compose version >/dev/null 2>&1; then
+  echo "[ERROR] Docker Compose v2 is required, but no working 'docker compose' command is available after package installation."
+  exit 1
+fi
 
 mkdir -p "${APP_DIR}"
 mkdir -p "${APP_DIR}/input" "${APP_DIR}/output" "${APP_DIR}/vault" "${APP_DIR}/ollama" "${APP_DIR}/cache" "${APP_DIR}/logs" "${APP_DIR}/tmp" "${APP_DIR}/config"
