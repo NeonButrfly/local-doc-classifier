@@ -1,0 +1,11 @@
+{
+  "mode": "hybrid",
+  "heuristic_fast_confidence": 0.92,
+  "lightgbm_fast_confidence": 0.8,
+  "needs_llm_threshold": 0.45,
+  "disagreement_risk_threshold": 0.35,
+  "shadow_mode": "all",
+  "shadow_sample_rate": 1.0,
+  "auto_retrain_enabled": true,
+  "auto_threshold_update_enabled": true
+}

@@ -74,6 +74,12 @@ That script hits both:
 - `/benchmark/upload-only` to measure transfer and staging time without decision-making
 - `/classify/upload` to compare the full end-to-end cost, including worker-side `parse_ms`, `model_ms`, `note_write_ms`, and `total_ms`
 
+Hybrid/autonomous classifier notes:
+
+- obvious PDF, DOCX, and XLSX fixtures may return through the fast heuristic path when LightGBM agrees
+- ambiguous cases can still call the taxonomy-aware LLM inline
+- the live server can enqueue shadow comparisons and retraining work in the background
+
 Results are written to:
 
 ```text

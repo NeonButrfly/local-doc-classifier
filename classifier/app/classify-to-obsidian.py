@@ -26,6 +26,18 @@ from category_manager import (
     normalize_image_classification_result,
     select_candidate_categories,
 )
+from hybrid_runtime import (
+    LIGHTGBM_MODEL_PATH,
+    apply_disagreement_updates,
+    choose_live_decision,
+    enqueue_shadow_job,
+    ensure_lightgbm_model,
+    load_hybrid_gating_config,
+    load_heuristic_rules,
+    maybe_retrain_from_shadow_data,
+    process_shadow_queue_once,
+    predict_lightgbm_result,
+)
 
 ALASKA_TZ = ZoneInfo("America/Anchorage")
 
@@ -248,8 +260,11 @@ def classify_document_fast(
     source_path: Path,
     markdown: str,
     categories: List[str],
+    rules: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     text = f"{source_path.name}\n{markdown}".lower()
+    rules = rules or load_heuristic_rules()
+    document_rules = rules.get("document_fast_path", {})
 
     def score(keywords: List[str]) -> int:
         return sum(1 for keyword in keywords if keyword in text)
@@ -277,7 +292,7 @@ def classify_document_fast(
     report_score = score(report_terms)
     policy_score = score(policy_terms)
 
-    if legal_score >= 6 and legal_score >= technical_score + 2:
+    if legal_score >= int(document_rules.get("legal_agreement_min_score", 6)) and legal_score >= technical_score + 2:
         return build_fast_document_classification(
             primary="legal",
             secondary=["contract", "work"] + (["policy"] if policy_score > 0 else []),
@@ -290,7 +305,10 @@ def classify_document_fast(
             categories=categories,
         )
 
-    if technical_score >= 6 and report_score >= 4:
+    if (
+        technical_score >= int(document_rules.get("technical_incident_min_score", 6))
+        and report_score >= int(document_rules.get("technical_report_min_score", 4))
+    ):
         return build_fast_document_classification(
             primary="report",
             secondary=["work", "technical", "policy"],
@@ -485,6 +503,177 @@ def classify_spreadsheet_fast(
     }
     return markdown, classification, metadata
 
+
+def resolve_hybrid_document_decision(
+    source_path: Path,
+    markdown: str,
+    parser_name: str,
+    categories: List[str],
+    heuristic_result: Optional[Dict[str, Any]],
+    ollama_url: str,
+    model: str,
+    max_chars: int,
+    lightgbm_model_path: Optional[Path] = None,
+    gating_config: Optional[Dict[str, Any]] = None,
+    timing: Optional[Dict[str, Any]] = None,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    taxonomy_candidates = select_candidate_categories(
+        all_categories=categories,
+        filename=source_path.name,
+        extension=source_path.suffix.lower(),
+        content=markdown,
+        is_image=False,
+    )
+
+    lightgbm_result: Optional[Dict[str, Any]] = None
+    model_path = lightgbm_model_path or LIGHTGBM_MODEL_PATH
+    try:
+        lightgbm_result = predict_lightgbm_result(
+            payload={
+                "filename": source_path.name,
+                "extension": source_path.suffix.lower(),
+                "parser": parser_name,
+                "text_preview": markdown,
+                "heuristic_primary": (heuristic_result or {}).get("primary_label", "unknown"),
+                "taxonomy_candidates": taxonomy_candidates,
+            },
+            model_path=model_path,
+        )
+    except Exception:
+        lightgbm_result = None
+
+    if heuristic_result is None:
+        decision = {
+            "use_inline_llm": True,
+            "live_source": "inline-llm",
+            "selected_primary_hint": (lightgbm_result or {}).get("top_label", "unknown"),
+            "decision_reason": "no-heuristic-fast-path",
+        }
+    elif lightgbm_result is None:
+        decision = {
+            "use_inline_llm": False,
+            "live_source": "heuristic-fast-path",
+            "selected_primary_hint": heuristic_result.get("primary_label", "unknown"),
+            "decision_reason": "heuristic-without-lightgbm",
+        }
+    else:
+        decision = choose_live_decision(
+            heuristic_result=heuristic_result,
+            lightgbm_result=lightgbm_result,
+            gating_config=gating_config or load_hybrid_gating_config(),
+            candidate_categories=taxonomy_candidates,
+        )
+        forced_keys = set(load_heuristic_rules().get("force_inline_llm_for", []) or [])
+        force_key = f"{parser_name}|{heuristic_result.get('primary_label', 'unknown')}"
+        if force_key in forced_keys:
+            decision = {
+                **decision,
+                "use_inline_llm": True,
+                "live_source": "inline-llm",
+                "decision_reason": "forced-inline-from-disagreement-config",
+            }
+
+    if timing is not None:
+        timing["hybrid_live_source"] = decision.get("live_source")
+        timing["hybrid_decision_reason"] = decision.get("decision_reason")
+        if lightgbm_result:
+            timing["lightgbm_top_label"] = lightgbm_result.get("top_label")
+            timing["lightgbm_top_probability"] = lightgbm_result.get("top_probability")
+            timing["lightgbm_needs_llm_probability"] = lightgbm_result.get("needs_llm_probability")
+            timing["lightgbm_disagreement_risk"] = lightgbm_result.get("disagreement_risk")
+
+    if decision["use_inline_llm"]:
+        classification = classify_markdown(
+            markdown=markdown,
+            source_path=source_path,
+            categories=categories,
+            ollama_url=ollama_url,
+            model=model,
+            max_chars=max_chars,
+            timing=timing,
+            heuristic_hints=heuristic_result,
+        )
+    else:
+        classification = heuristic_result or {
+            "primary_label": "unknown",
+            "secondary_labels": [],
+            "confidence": 0.0,
+            "summary": "No classification available.",
+            "reason": "No heuristic result and no inline model was used.",
+            "sensitive_flags": ["none"],
+            "recommended_action": "review",
+            "file_date_guess": "unknown",
+            "language": "unknown",
+            "candidate_categories_used": taxonomy_candidates,
+        }
+
+    hybrid_meta = {
+        "taxonomy_candidates": taxonomy_candidates,
+        "lightgbm": lightgbm_result,
+        "decision": decision,
+    }
+    return classification, hybrid_meta
+
+
+def should_enqueue_shadow_job(gating_config: Dict[str, Any], live_source: str) -> bool:
+    mode = str(gating_config.get("shadow_mode", "all"))
+    if mode == "off":
+        return False
+    if mode == "all":
+        return True
+    if mode == "fast-only":
+        return live_source == "heuristic-fast-path"
+    return True
+
+
+def process_shadow_queue_command(
+    categories: List[str],
+    ollama_url: str,
+    model: str,
+    vision_model: str,
+    max_chars: int,
+) -> Dict[str, Any]:
+    def shadow_classifier(job: Dict[str, Any]) -> Dict[str, Any]:
+        mode = str(job.get("mode", "document"))
+        if mode == "image":
+            source_path = Path(str(job.get("source_path", "")))
+            return classify_image(
+                source_path=source_path,
+                categories=categories,
+                ollama_url=ollama_url,
+                vision_model=vision_model,
+            )
+
+        return classify_markdown(
+            markdown=str(job.get("markdown", "")),
+            source_path=Path(str(job.get("filename", "shadow-document"))),
+            categories=categories,
+            ollama_url=ollama_url,
+            model=model,
+            max_chars=max_chars,
+            heuristic_hints=job.get("heuristic_result") or {},
+        )
+
+    result = {"ok": True}
+    processed = process_shadow_queue_once(shadow_classifier=shadow_classifier)
+    result["processed"] = processed
+
+    from hybrid_runtime import SHADOW_COMPARISONS_PATH
+
+    comparisons = []
+    if SHADOW_COMPARISONS_PATH.exists():
+        for line in SHADOW_COMPARISONS_PATH.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]:
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(item, dict):
+                comparisons.append(item)
+
+    result["updates"] = apply_disagreement_updates(comparisons=comparisons)
+    result["retrain"] = maybe_retrain_from_shadow_data(min_rows=3)
+    return result
+
 def parse_document(path: Path, work_dir: Path) -> tuple[str, str]:
     ext = path.suffix.lower()
 
@@ -572,6 +761,7 @@ def classify_markdown(
     model: str,
     max_chars: int,
     timing: Optional[Dict[str, Any]] = None,
+    heuristic_hints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     ext = source_path.suffix.lower()
     clipped = markdown[:max_chars]
@@ -609,6 +799,9 @@ Allowed categories:
 
 Prior correction examples:
 {format_examples_for_prompt(examples)}
+
+Heuristic hints:
+{json.dumps(heuristic_hints or {}, indent=2)}
 
 Return exactly this JSON shape:
 {{
@@ -928,6 +1121,8 @@ def main() -> int:
     parser.add_argument("--no-vision", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--timing-output", default="", help="Optional JSON file path for per-run timing output.")
+    parser.add_argument("--process-shadow-queue", action="store_true")
+    parser.add_argument("--retrain-hybrid-model", action="store_true")
 
     args = parser.parse_args()
 
@@ -946,6 +1141,26 @@ def main() -> int:
     work_dir.mkdir(parents=True, exist_ok=True)
 
     wait_for_ollama(args.ollama_url)
+
+    if args.process_shadow_queue:
+        result = process_shadow_queue_command(
+            categories=categories,
+            ollama_url=args.ollama_url,
+            model=args.model,
+            vision_model=args.vision_model,
+            max_chars=args.max_chars,
+        )
+        print(json.dumps(result, indent=2))
+        return 0 if result.get("ok") else 1
+
+    if args.retrain_hybrid_model:
+        result = ensure_lightgbm_model()
+        if not result.get("ok") or not result.get("created"):
+            retrain = maybe_retrain_from_shadow_data(min_rows=3)
+            print(json.dumps(retrain, indent=2))
+            return 0 if retrain.get("retrained") else 1
+        print(json.dumps(result, indent=2))
+        return 0
 
     if args.self_test:
         print(json.dumps({
@@ -970,17 +1185,23 @@ def main() -> int:
         print(f"[WARN] No supported files found under: {input_path}")
         return 0
 
+    ensure_lightgbm_model()
+
     manifest = output / "manifest.jsonl"
     notes: List[Path] = []
     successes = 0
     failures = 0
     timing_records: List[Dict[str, Any]] = []
+    gating_config = load_hybrid_gating_config()
+    heuristic_rules = load_heuristic_rules()
 
     with manifest.open("a", encoding="utf-8") as mf:
         for source_path in files:
             print(f"[INFO] Classifying: {source_path}")
             markdown: Optional[str] = None
             file_hash = ""
+            hybrid_meta: Optional[Dict[str, Any]] = None
+            heuristic_classification: Optional[Dict[str, Any]] = None
             file_started_at = time.perf_counter()
             ext = source_path.suffix.lower()
             timing: Dict[str, Any] = {
@@ -1010,8 +1231,6 @@ def main() -> int:
                     markdown, parser_name, spreadsheet_metadata = parse_spreadsheet_fast(source_path)
                     timing["parse_ms"] = elapsed_ms(parse_started_at)
                     timing["parser"] = parser_name
-                    timing["model_ms"] = 0.0
-                    timing["classifier"] = "heuristic-spreadsheet-fast-path"
                     timing["candidate_category_count"] = len(
                         [
                             label
@@ -1022,38 +1241,63 @@ def main() -> int:
                     timing["markdown_chars"] = len(markdown)
                     timing["clipped_markdown_chars"] = len(markdown)
                     timing["sheet_count"] = spreadsheet_metadata.get("sheet_count", 0)
-                    markdown, classification, spreadsheet_metadata = classify_spreadsheet_fast(
+                    markdown, heuristic_classification, spreadsheet_metadata = classify_spreadsheet_fast(
                         source_path=source_path,
                         categories=categories,
                         markdown=markdown,
                         metadata=spreadsheet_metadata,
                     )
+                    classification, hybrid_meta = resolve_hybrid_document_decision(
+                        source_path=source_path,
+                        markdown=markdown,
+                        parser_name=parser_name,
+                        categories=categories,
+                        heuristic_result=heuristic_classification,
+                        ollama_url=args.ollama_url,
+                        model=args.model,
+                        max_chars=args.max_chars,
+                        gating_config=gating_config,
+                        timing=timing,
+                    )
+                    timing["classifier"] = (
+                        "heuristic-spreadsheet-fast-path"
+                        if hybrid_meta["decision"]["live_source"] == "heuristic-fast-path"
+                        else "taxonomy-aware-inline-llm"
+                    )
+                    if hybrid_meta["decision"]["live_source"] == "heuristic-fast-path":
+                        timing["model_ms"] = 0.0
                 else:
                     parse_started_at = time.perf_counter()
                     markdown, parser_name = parse_document(source_path, work_dir)
                     timing["parse_ms"] = elapsed_ms(parse_started_at)
                     timing["parser"] = parser_name
-                    classification = classify_document_fast(
+                    heuristic_classification = classify_document_fast(
                         source_path=source_path,
                         markdown=markdown,
                         categories=categories,
+                        rules=heuristic_rules,
                     )
-                    if classification is not None:
+                    timing["markdown_chars"] = len(markdown)
+                    timing["clipped_markdown_chars"] = len(markdown[:args.max_chars])
+                    classification, hybrid_meta = resolve_hybrid_document_decision(
+                        source_path=source_path,
+                        markdown=markdown,
+                        parser_name=parser_name,
+                        categories=categories,
+                        heuristic_result=heuristic_classification,
+                        ollama_url=args.ollama_url,
+                        model=args.model,
+                        max_chars=args.max_chars,
+                        gating_config=gating_config,
+                        timing=timing,
+                    )
+                    timing["classifier"] = (
+                        "heuristic-document-fast-path"
+                        if hybrid_meta["decision"]["live_source"] == "heuristic-fast-path" and heuristic_classification is not None
+                        else "taxonomy-aware-inline-llm"
+                    )
+                    if hybrid_meta["decision"]["live_source"] == "heuristic-fast-path":
                         timing["model_ms"] = 0.0
-                        timing["classifier"] = "heuristic-document-fast-path"
-                        timing["candidate_category_count"] = len(classification.get("candidate_categories_used", []) or [])
-                        timing["markdown_chars"] = len(markdown)
-                        timing["clipped_markdown_chars"] = len(markdown[:args.max_chars])
-                    else:
-                        classification = classify_markdown(
-                            markdown=markdown,
-                            source_path=source_path,
-                            categories=categories,
-                            ollama_url=args.ollama_url,
-                            model=args.model,
-                            max_chars=args.max_chars,
-                            timing=timing,
-                        )
 
                 note_started_at = time.perf_counter()
                 note_path = write_obsidian_note(
@@ -1078,6 +1322,7 @@ def main() -> int:
                     "sha256": file_hash,
                     "note_path": str(note_path),
                     "classification": classification,
+                    "hybrid": hybrid_meta if ext not in IMAGE_EXTENSIONS or args.no_vision else None,
                     "timing": timing,
                 }
 
@@ -1086,6 +1331,23 @@ def main() -> int:
                 mf.flush()
                 timing["manifest_write_ms"] = elapsed_ms(manifest_started_at)
                 timing["total_ms"] = elapsed_ms(file_started_at)
+
+                if should_enqueue_shadow_job(gating_config, (hybrid_meta or {}).get("decision", {}).get("live_source", "")):
+                    shadow_payload = {
+                        "mode": "image" if ext in IMAGE_EXTENSIONS and not args.no_vision else "document",
+                        "filename": source_path.name,
+                        "extension": ext,
+                        "parser": timing.get("parser"),
+                        "source_path": str(source_path),
+                        "markdown": markdown or "",
+                        "heuristic_result": heuristic_classification,
+                        "lightgbm_result": (hybrid_meta or {}).get("lightgbm"),
+                        "live_result": classification,
+                        "taxonomy_candidates": (hybrid_meta or {}).get("taxonomy_candidates", []),
+                        "text_preview": ((markdown or classification.get("summary", ""))[:12000]),
+                    }
+                    enqueue_shadow_job(shadow_payload)
+                    timing["shadow_enqueued"] = True
 
                 notes.append(note_path)
                 timing_records.append(dict(timing))

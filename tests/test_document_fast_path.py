@@ -113,6 +113,88 @@ class DocumentFastPathTests(unittest.TestCase):
         self.assertIn("work", classification["secondary_labels"])
         self.assertIn("policy", classification["secondary_labels"])
 
+    def test_hybrid_document_path_uses_inline_model_when_gate_requires_llm(self):
+        heuristic = {
+            "primary_label": "legal",
+            "secondary_labels": ["contract", "work"],
+            "confidence": 0.96,
+        }
+        model_result = {
+            "primary_label": "policy",
+            "secondary_labels": ["legal", "work"],
+            "confidence": 0.88,
+            "summary": "Taxonomy-aware model result",
+            "reason": "Model overrode heuristic due to conflict.",
+            "sensitive_flags": ["legal"],
+            "recommended_action": "review",
+            "file_date_guess": "unknown",
+            "language": "English",
+        }
+
+        with patch.object(
+            self.classifier_module,
+            "classify_markdown",
+            return_value=model_result,
+        ), patch.object(
+            self.classifier_module,
+            "predict_lightgbm_result",
+            return_value={
+                "top_label": "policy",
+                "top_probability": 0.91,
+                "needs_llm_probability": 0.82,
+                "disagreement_risk": 0.71,
+                "top_labels": ["policy", "legal"],
+            },
+        ):
+            classification, hybrid_meta = self.classifier_module.resolve_hybrid_document_decision(
+                source_path=PDF_FIXTURE_PATH,
+                markdown=self.synthetic_pdf_text,
+                parser_name="pdftotext",
+                categories=self.categories,
+                heuristic_result=heuristic,
+                ollama_url="http://127.0.0.1:9",
+                model="fake-model",
+                max_chars=16000,
+            )
+
+        self.assertEqual(classification["primary_label"], "policy")
+        self.assertEqual(hybrid_meta["decision"]["live_source"], "inline-llm")
+        self.assertTrue(hybrid_meta["decision"]["use_inline_llm"])
+
+    def test_hybrid_document_path_records_fast_path_metadata_when_accepted(self):
+        heuristic = {
+            "primary_label": "legal",
+            "secondary_labels": ["contract", "work"],
+            "confidence": 0.96,
+        }
+
+        with patch.object(
+            self.classifier_module,
+            "predict_lightgbm_result",
+            return_value={
+                "top_label": "legal",
+                "top_probability": 0.95,
+                "needs_llm_probability": 0.11,
+                "disagreement_risk": 0.09,
+                "top_labels": ["legal", "contract"],
+            },
+        ):
+            classification, hybrid_meta = self.classifier_module.resolve_hybrid_document_decision(
+                source_path=PDF_FIXTURE_PATH,
+                markdown=self.synthetic_pdf_text,
+                parser_name="pdftotext",
+                categories=self.categories,
+                heuristic_result=heuristic,
+                ollama_url="http://127.0.0.1:9",
+                model="fake-model",
+                max_chars=16000,
+            )
+
+        self.assertEqual(classification["primary_label"], "legal")
+        self.assertEqual(hybrid_meta["decision"]["live_source"], "heuristic-fast-path")
+        self.assertEqual(hybrid_meta["lightgbm"]["top_label"], "legal")
+        self.assertIn("legal", hybrid_meta["taxonomy_candidates"])
+
 
 if __name__ == "__main__":
     unittest.main()

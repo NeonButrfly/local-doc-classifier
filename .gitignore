@@ -21,10 +21,17 @@ taxonomy-router-report.json
 taxonomy-router.joblib
 corrections.jsonl
 examples.jsonl
+config/lightgbm-classifier.joblib
+config/lightgbm-training-report.json
 
 # Test results
 tests/_classifier-test-results/
 _classifier-test-results/
+
+# Autonomous runtime artifacts
+output/shadow-queue/
+output/shadow-comparisons.jsonl
+output/retrain/
 
 # Avoid committing accidental real files elsewhere
 *.pdf

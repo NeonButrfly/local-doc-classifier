@@ -1,0 +1,10 @@
+{
+  "document_fast_path": {
+    "legal_agreement_min_score": 6,
+    "technical_incident_min_score": 6,
+    "technical_report_min_score": 4
+  },
+  "spreadsheet_fast_path": {
+    "enabled": true
+  }
+}

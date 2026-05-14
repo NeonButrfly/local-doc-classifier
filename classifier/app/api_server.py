@@ -28,8 +28,11 @@ VAULT_ROOT = Path("/vault").resolve()
 MANIFEST_PATH = OUTPUT_ROOT / "manifest.jsonl"
 INDEX_PATH = VAULT_ROOT / "Classification Index.md"
 CLASSIFIER_SCRIPT = Path("/app/classify-to-obsidian.py")
+SHADOW_WORKER_ENABLED = os.environ.get("ENABLE_SHADOW_WORKER", "1") != "0"
+SHADOW_WORKER_INTERVAL_SECONDS = int(os.environ.get("SHADOW_WORKER_INTERVAL_SECONDS", "15"))
 
 LOCK = threading.Lock()
+SHADOW_WORKER_STARTED = False
 
 SUPPORTED_EXTENSIONS = {
     ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
@@ -94,6 +97,47 @@ def load_worker_timing(path: Path) -> Optional[dict]:
         except Exception:
             pass
 
+
+def shadow_worker_loop() -> None:
+    while True:
+        try:
+            cmd = [
+                sys.executable,
+                str(CLASSIFIER_SCRIPT),
+                "--vault",
+                str(VAULT_ROOT),
+                "--output",
+                str(OUTPUT_ROOT),
+                "--process-shadow-queue",
+            ]
+            with LOCK:
+                subprocess.run(
+                    cmd,
+                    cwd="/app",
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=1800,
+                )
+        except Exception:
+            pass
+        time.sleep(SHADOW_WORKER_INTERVAL_SECONDS)
+
+
+def maybe_start_shadow_worker() -> None:
+    global SHADOW_WORKER_STARTED
+    if SHADOW_WORKER_STARTED:
+        return
+    if not SHADOW_WORKER_ENABLED:
+        return
+    if not CLASSIFIER_SCRIPT.exists():
+        return
+    if not Path("/app").exists():
+        return
+    thread = threading.Thread(target=shadow_worker_loop, name="shadow-worker", daemon=True)
+    thread.start()
+    SHADOW_WORKER_STARTED = True
+
 async def stage_uploaded_file(file: UploadFile) -> dict:
     original_name = safe_filename(file.filename or "upload.bin")
     ext = Path(original_name).suffix.lower()
@@ -131,6 +175,7 @@ async def stage_uploaded_file(file: UploadFile) -> dict:
 @APP.get("/health")
 def health(x_api_key: Optional[str] = Header(default=None)):
     check_token(x_api_key)
+    maybe_start_shadow_worker()
 
     INPUT_ROOT.mkdir(parents=True, exist_ok=True)
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -170,6 +215,7 @@ async def classify_upload(
     x_api_key: Optional[str] = Header(default=None),
 ):
     check_token(x_api_key)
+    maybe_start_shadow_worker()
     total_started_at = time.perf_counter()
     staged = await stage_uploaded_file(file)
     staged_path = staged["staged_path"]

@@ -36,6 +36,12 @@ The response also includes:
 - `total_ms`: full server-side request time
 - `worker_timing`: deeper worker-side timing details from inside the classifier process
 
+Hybrid text paths also record decision metadata in the manifest, including:
+
+- taxonomy candidate labels used for the live decision
+- LightGBM top-label and gate probabilities
+- whether the live answer came from the fast heuristic path or the inline LLM path
+
 Typical `worker_timing` fields:
 
 - `mode`: `document` or `image`
@@ -46,6 +52,12 @@ Typical `worker_timing` fields:
 - `note_write_ms`: time spent writing the Obsidian note and extracted Markdown
 - `manifest_write_ms`: time spent appending the manifest record
 - `total_ms`: total worker-side time for the file
+
+Autonomous runtime behavior:
+
+- fast-path text documents may be validated by LightGBM before deciding whether to call the LLM inline
+- background shadow-mode review runs through a queue on the server
+- disagreement evidence can retrain the LightGBM artifact and update heuristic config thresholds without editing source code
 
 ## POST /benchmark/upload-only
 
