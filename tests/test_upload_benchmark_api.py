@@ -131,6 +131,20 @@ class UploadBenchmarkApiTests(unittest.TestCase):
         self.assertEqual(body["worker_timing"]["parse_ms"], 12.5)
         self.assertEqual(body["worker_timing"]["model_ms"], 345.6)
 
+    def test_shadow_worker_cycle_does_not_wait_for_request_lock(self):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with api_server.REQUEST_LOCK:
+            with patch.object(api_server.subprocess, "run", side_effect=fake_run):
+                api_server.run_shadow_worker_cycle()
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--process-shadow-queue", calls[0][0])
+
 
 if __name__ == "__main__":
     unittest.main()

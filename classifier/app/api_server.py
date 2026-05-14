@@ -31,7 +31,7 @@ CLASSIFIER_SCRIPT = Path("/app/classify-to-obsidian.py")
 SHADOW_WORKER_ENABLED = os.environ.get("ENABLE_SHADOW_WORKER", "1") != "0"
 SHADOW_WORKER_INTERVAL_SECONDS = int(os.environ.get("SHADOW_WORKER_INTERVAL_SECONDS", "15"))
 
-LOCK = threading.Lock()
+REQUEST_LOCK = threading.Lock()
 SHADOW_WORKER_STARTED = False
 
 SUPPORTED_EXTENSIONS = {
@@ -98,27 +98,30 @@ def load_worker_timing(path: Path) -> Optional[dict]:
             pass
 
 
+def run_shadow_worker_cycle() -> None:
+    cmd = [
+        sys.executable,
+        str(CLASSIFIER_SCRIPT),
+        "--vault",
+        str(VAULT_ROOT),
+        "--output",
+        str(OUTPUT_ROOT),
+        "--process-shadow-queue",
+    ]
+    subprocess.run(
+        cmd,
+        cwd="/app",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=1800,
+    )
+
+
 def shadow_worker_loop() -> None:
     while True:
         try:
-            cmd = [
-                sys.executable,
-                str(CLASSIFIER_SCRIPT),
-                "--vault",
-                str(VAULT_ROOT),
-                "--output",
-                str(OUTPUT_ROOT),
-                "--process-shadow-queue",
-            ]
-            with LOCK:
-                subprocess.run(
-                    cmd,
-                    cwd="/app",
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    timeout=1800,
-                )
+            run_shadow_worker_cycle()
         except Exception:
             pass
         time.sleep(SHADOW_WORKER_INTERVAL_SECONDS)
@@ -244,7 +247,7 @@ async def classify_upload(
         cmd.extend(["--categories", categories])
 
     classify_started_at = time.perf_counter()
-    with LOCK:
+    with REQUEST_LOCK:
         proc = subprocess.run(
             cmd,
             cwd="/app",
