@@ -34,8 +34,10 @@ mkdir -p "${APP_DIR}"
 mkdir -p "${APP_DIR}/input" "${APP_DIR}/output" "${APP_DIR}/vault" "${APP_DIR}/ollama" "${APP_DIR}/cache" "${APP_DIR}/logs" "${APP_DIR}/tmp" "${APP_DIR}/config"
 
 cp -a "${SRC_DIR}/docker-compose.yml" "${APP_DIR}/docker-compose.yml"
-cp -a "${SRC_DIR}/classifier" "${APP_DIR}/classifier"
-cp -a "${SRC_DIR}/taxonomy-router" "${APP_DIR}/taxonomy-router" 2>/dev/null || true
+rm -rf "${APP_DIR}/classifier" "${APP_DIR}/taxonomy-router"
+mkdir -p "${APP_DIR}/classifier" "${APP_DIR}/taxonomy-router"
+cp -a "${SRC_DIR}/classifier/." "${APP_DIR}/classifier/"
+cp -a "${SRC_DIR}/taxonomy-router/." "${APP_DIR}/taxonomy-router/" 2>/dev/null || true
 cp -a "${SRC_DIR}/scripts/docclass" "${APP_DIR}/docclass" 2>/dev/null || true
 cp -a "${SRC_DIR}/scripts/taxcat" "${APP_DIR}/taxcat" 2>/dev/null || true
 cp -a "${SRC_DIR}/scripts/sync-public-categories.py" "${APP_DIR}/sync-public-categories.py" 2>/dev/null || true
