@@ -34,6 +34,17 @@ The response also includes:
 - `upload_ms`: server-side time spent receiving and staging the multipart upload
 - `classify_ms`: server-side time spent after upload on parsing/classification/note writing
 - `total_ms`: full server-side request time
+- `worker_timing`: deeper worker-side timing details from inside the classifier process
+
+Typical `worker_timing` fields:
+
+- `mode`: `document` or `image`
+- `parser`: parser path used for document files such as `docling`, `docling-converted`, `plain-text`, or `html-plain`
+- `parse_ms`: time spent extracting text or Markdown before the model call
+- `model_ms`: time spent waiting on the Ollama model response
+- `note_write_ms`: time spent writing the Obsidian note and extracted Markdown
+- `manifest_write_ms`: time spent appending the manifest record
+- `total_ms`: total worker-side time for the file
 
 ## POST /benchmark/upload-only
 

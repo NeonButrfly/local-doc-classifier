@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -42,6 +43,9 @@ PLAIN_EXTENSIONS = {
 
 def now_ak() -> str:
     return datetime.now(ALASKA_TZ).isoformat(timespec="seconds")
+
+def elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 3)
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -158,24 +162,24 @@ def parse_with_docling(path: Path) -> str:
     result = converter.convert(str(path))
     return result.document.export_to_markdown()
 
-def parse_document(path: Path, work_dir: Path) -> str:
+def parse_document(path: Path, work_dir: Path) -> tuple[str, str]:
     ext = path.suffix.lower()
 
     if ext in PLAIN_EXTENSIONS:
-        return parse_plain_text(path)
+        return parse_plain_text(path), "plain-text"
 
     try:
-        return parse_with_docling(path)
+        return parse_with_docling(path), "docling"
     except Exception as first_error:
         converted = convert_legacy_office(path, work_dir)
         if converted:
             try:
-                return parse_with_docling(converted)
+                return parse_with_docling(converted), "docling-converted"
             except Exception:
                 pass
 
         if ext in {".html", ".htm"}:
-            return parse_plain_text(path)
+            return parse_plain_text(path), "html-plain"
 
         raise RuntimeError(f"Document parsing failed for {path}: {first_error}") from first_error
 
@@ -228,6 +232,7 @@ def classify_markdown(
     ollama_url: str,
     model: str,
     max_chars: int,
+    timing: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     ext = source_path.suffix.lower()
     clipped = markdown[:max_chars]
@@ -286,12 +291,21 @@ Extracted content:
 {clipped}
 """.strip()
 
+    if timing is not None:
+        timing["candidate_category_count"] = len(candidate_categories)
+        timing["markdown_chars"] = len(markdown)
+        timing["clipped_markdown_chars"] = len(clipped)
+        timing["model"] = model
+
+    model_started_at = time.perf_counter()
     content = ollama_chat(
         ollama_url=ollama_url,
         model=model,
         messages=[{"role": "user", "content": prompt}],
         json_mode=True,
     )
+    if timing is not None:
+        timing["model_ms"] = elapsed_ms(model_started_at)
 
     result = extract_json(content)
     result["candidate_categories_used"] = candidate_categories
@@ -302,6 +316,7 @@ def classify_image(
     categories: List[str],
     ollama_url: str,
     vision_model: str,
+    timing: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     ext = source_path.suffix.lower()
 
@@ -360,6 +375,12 @@ Filename:
 {source_path.name}
 """.strip()
 
+    if timing is not None:
+        timing["candidate_category_count"] = len(candidate_categories)
+        timing["image_bytes"] = source_path.stat().st_size
+        timing["model"] = vision_model
+
+    model_started_at = time.perf_counter()
     content = ollama_chat(
         ollama_url=ollama_url,
         model=vision_model,
@@ -371,6 +392,8 @@ Filename:
         json_mode=True,
         timeout=900,
     )
+    if timing is not None:
+        timing["model_ms"] = elapsed_ms(model_started_at)
 
     result = extract_json(content)
     result["candidate_categories_used"] = candidate_categories
@@ -565,6 +588,7 @@ def main() -> int:
     parser.add_argument("--attach-originals", action="store_true")
     parser.add_argument("--no-vision", action="store_true")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--timing-output", default="", help="Optional JSON file path for per-run timing output.")
 
     args = parser.parse_args()
 
@@ -611,16 +635,28 @@ def main() -> int:
     notes: List[Path] = []
     successes = 0
     failures = 0
+    timing_records: List[Dict[str, Any]] = []
 
     with manifest.open("a", encoding="utf-8") as mf:
         for source_path in files:
             print(f"[INFO] Classifying: {source_path}")
             markdown: Optional[str] = None
             file_hash = ""
+            file_started_at = time.perf_counter()
+            ext = source_path.suffix.lower()
+            timing: Dict[str, Any] = {
+                "source_path": str(source_path),
+                "filename": source_path.name,
+                "extension": ext,
+                "mode": "image" if ext in IMAGE_EXTENSIONS and not args.no_vision else "document",
+                "attach_originals": args.attach_originals,
+                "vision_enabled": not args.no_vision,
+            }
 
             try:
+                hash_started_at = time.perf_counter()
                 file_hash = sha256_file(source_path)
-                ext = source_path.suffix.lower()
+                timing["sha256_ms"] = elapsed_ms(hash_started_at)
 
                 if ext in IMAGE_EXTENSIONS and not args.no_vision:
                     classification = classify_image(
@@ -628,9 +664,13 @@ def main() -> int:
                         categories=categories,
                         ollama_url=args.ollama_url,
                         vision_model=args.vision_model,
+                        timing=timing,
                     )
                 else:
-                    markdown = parse_document(source_path, work_dir)
+                    parse_started_at = time.perf_counter()
+                    markdown, parser_name = parse_document(source_path, work_dir)
+                    timing["parse_ms"] = elapsed_ms(parse_started_at)
+                    timing["parser"] = parser_name
                     classification = classify_markdown(
                         markdown=markdown,
                         source_path=source_path,
@@ -638,8 +678,10 @@ def main() -> int:
                         ollama_url=args.ollama_url,
                         model=args.model,
                         max_chars=args.max_chars,
+                        timing=timing,
                     )
 
+                note_started_at = time.perf_counter()
                 note_path = write_obsidian_note(
                     vault=vault,
                     source_path=source_path,
@@ -648,6 +690,12 @@ def main() -> int:
                     classification=classification,
                     attach_originals=args.attach_originals,
                 )
+                timing["note_write_ms"] = elapsed_ms(note_started_at)
+                timing["primary_label"] = classification.get("primary_label", "unknown")
+                timing["secondary_label_count"] = len(classification.get("secondary_labels", []) or [])
+                timing["confidence"] = classification.get("confidence")
+                timing["ok"] = True
+                timing["total_ms"] = elapsed_ms(file_started_at)
 
                 record = {
                     "ok": True,
@@ -656,18 +704,26 @@ def main() -> int:
                     "sha256": file_hash,
                     "note_path": str(note_path),
                     "classification": classification,
+                    "timing": timing,
                 }
 
+                manifest_started_at = time.perf_counter()
                 mf.write(json.dumps(record, ensure_ascii=False) + "\n")
                 mf.flush()
+                timing["manifest_write_ms"] = elapsed_ms(manifest_started_at)
+                timing["total_ms"] = elapsed_ms(file_started_at)
 
                 notes.append(note_path)
+                timing_records.append(dict(timing))
                 successes += 1
 
                 print(f"[OK] {source_path.name} => {classification.get('primary_label', 'unknown')} note={note_path}")
 
             except Exception as e:
                 failures += 1
+                timing["ok"] = False
+                timing["error"] = str(e)
+                timing["total_ms"] = elapsed_ms(file_started_at)
 
                 record = {
                     "ok": False,
@@ -675,14 +731,32 @@ def main() -> int:
                     "source_path": str(source_path),
                     "sha256": file_hash,
                     "error": str(e),
+                    "timing": timing,
                 }
 
                 mf.write(json.dumps(record, ensure_ascii=False) + "\n")
                 mf.flush()
+                timing_records.append(dict(timing))
 
                 print(f"[FAIL] {source_path}: {e}", file=sys.stderr)
 
     write_index(vault, notes)
+
+    if args.timing_output:
+        timing_output = Path(args.timing_output)
+        timing_output.parent.mkdir(parents=True, exist_ok=True)
+        payload: Dict[str, Any]
+        if len(timing_records) == 1:
+            payload = dict(timing_records[0])
+        else:
+            payload = {
+                "ok": failures == 0,
+                "successes": successes,
+                "failures": failures,
+                "file_count": len(timing_records),
+                "files": timing_records,
+            }
+        timing_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"[DONE] successes={successes} failures={failures}")
     print(f"[DONE] vault={vault}")

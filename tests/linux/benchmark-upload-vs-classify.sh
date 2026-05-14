@@ -120,6 +120,11 @@ run_benchmark() {
   local server_upload_times=()
   local server_classify_times=()
   local server_total_times=()
+  local worker_parse_times=()
+  local worker_model_times=()
+  local worker_note_times=()
+  local worker_manifest_times=()
+  local worker_total_times=()
 
   echo "[${label}]"
 
@@ -165,16 +170,33 @@ run_benchmark() {
     server_classify="$(jq -r '.classify_ms // 0' "${body_path}")"
     local server_total
     server_total="$(jq -r '.total_ms // 0' "${body_path}")"
+    local worker_parser
+    worker_parser="$(jq -r '.worker_timing.parser // .worker_timing.mode // "n/a"' "${body_path}")"
+    local worker_parse
+    worker_parse="$(jq -r '.worker_timing.parse_ms // 0' "${body_path}")"
+    local worker_model
+    worker_model="$(jq -r '.worker_timing.model_ms // 0' "${body_path}")"
+    local worker_note
+    worker_note="$(jq -r '.worker_timing.note_write_ms // 0' "${body_path}")"
+    local worker_manifest
+    worker_manifest="$(jq -r '.worker_timing.manifest_write_ms // 0' "${body_path}")"
+    local worker_total
+    worker_total="$(jq -r '.worker_timing.total_ms // 0' "${body_path}")"
 
     client_times+=("${client_total}")
     server_upload_times+=("${server_upload}")
     server_classify_times+=("${server_classify}")
     server_total_times+=("${server_total}")
+    worker_parse_times+=("${worker_parse}")
+    worker_model_times+=("${worker_model}")
+    worker_note_times+=("${worker_note}")
+    worker_manifest_times+=("${worker_manifest}")
+    worker_total_times+=("${worker_total}")
 
-    echo "  run ${run}: client_total=${client_total}s size_upload=${size_upload}B speed_upload=${speed_upload}B/s server_upload_ms=${server_upload} server_classify_ms=${server_classify} server_total_ms=${server_total}"
+    echo "  run ${run}: client_total=${client_total}s size_upload=${size_upload}B speed_upload=${speed_upload}B/s server_upload_ms=${server_upload} server_classify_ms=${server_classify} server_total_ms=${server_total} worker_parser=${worker_parser} worker_parse_ms=${worker_parse} worker_model_ms=${worker_model} worker_note_ms=${worker_note} worker_manifest_ms=${worker_manifest} worker_total_ms=${worker_total}"
   done
 
-  python3 - "$label" "${client_times[*]}" "${server_upload_times[*]}" "${server_classify_times[*]}" "${server_total_times[*]}" <<'PY'
+  python3 - "$label" "${client_times[*]}" "${server_upload_times[*]}" "${server_classify_times[*]}" "${server_total_times[*]}" "${worker_parse_times[*]}" "${worker_model_times[*]}" "${worker_note_times[*]}" "${worker_manifest_times[*]}" "${worker_total_times[*]}" <<'PY'
 import statistics
 import sys
 
@@ -183,6 +205,11 @@ client = [float(x) for x in sys.argv[2].split()] if sys.argv[2].strip() else []
 server_upload = [float(x) for x in sys.argv[3].split()] if sys.argv[3].strip() else []
 server_classify = [float(x) for x in sys.argv[4].split()] if sys.argv[4].strip() else []
 server_total = [float(x) for x in sys.argv[5].split()] if sys.argv[5].strip() else []
+worker_parse = [float(x) for x in sys.argv[6].split()] if sys.argv[6].strip() else []
+worker_model = [float(x) for x in sys.argv[7].split()] if sys.argv[7].strip() else []
+worker_note = [float(x) for x in sys.argv[8].split()] if sys.argv[8].strip() else []
+worker_manifest = [float(x) for x in sys.argv[9].split()] if sys.argv[9].strip() else []
+worker_total = [float(x) for x in sys.argv[10].split()] if sys.argv[10].strip() else []
 
 def summary(values):
     if not values:
@@ -193,6 +220,11 @@ print(f"  summary client_total_s: {summary(client)}")
 print(f"  summary server_upload_ms: {summary(server_upload)}")
 print(f"  summary server_classify_ms: {summary(server_classify)}")
 print(f"  summary server_total_ms: {summary(server_total)}")
+print(f"  summary worker_parse_ms: {summary(worker_parse)}")
+print(f"  summary worker_model_ms: {summary(worker_model)}")
+print(f"  summary worker_note_ms: {summary(worker_note)}")
+print(f"  summary worker_manifest_ms: {summary(worker_manifest)}")
+print(f"  summary worker_total_ms: {summary(worker_total)}")
 PY
 
   echo

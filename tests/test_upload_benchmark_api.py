@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -80,10 +81,28 @@ class UploadBenchmarkApiTests(unittest.TestCase):
     def test_classify_upload_reports_upload_and_classify_timing_breakdown(self):
         payload = b"classify-me" * 2048
 
+        def fake_run(cmd, **kwargs):
+            timing_output = Path(cmd[cmd.index("--timing-output") + 1])
+            timing_output.parent.mkdir(parents=True, exist_ok=True)
+            timing_output.write_text(
+                json.dumps(
+                    {
+                        "mode": "document",
+                        "parser": "docling",
+                        "parse_ms": 12.5,
+                        "model_ms": 345.6,
+                        "note_write_ms": 7.8,
+                        "total_ms": 366.2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
         with patch.object(
             api_server.subprocess,
             "run",
-            return_value=SimpleNamespace(returncode=0, stdout="ok", stderr=""),
+            side_effect=fake_run,
         ), patch.object(
             api_server,
             "read_manifest_for_source",
@@ -108,6 +127,9 @@ class UploadBenchmarkApiTests(unittest.TestCase):
         self.assertGreaterEqual(body["total_ms"], body["upload_ms"])
         self.assertGreaterEqual(body["total_ms"], body["classify_ms"])
         self.assertEqual(body["record"]["classification"]["primary_label"], "legal")
+        self.assertEqual(body["worker_timing"]["parser"], "docling")
+        self.assertEqual(body["worker_timing"]["parse_ms"], 12.5)
+        self.assertEqual(body["worker_timing"]["model_ms"], 345.6)
 
 
 if __name__ == "__main__":

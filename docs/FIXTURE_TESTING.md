@@ -72,7 +72,7 @@ chmod +x ./tests/linux/benchmark-upload-vs-classify.sh
 That script hits both:
 
 - `/benchmark/upload-only` to measure transfer and staging time without decision-making
-- `/classify/upload` to compare the full end-to-end cost
+- `/classify/upload` to compare the full end-to-end cost, including worker-side `parse_ms`, `model_ms`, `note_write_ms`, and `total_ms`
 
 Results are written to:
 

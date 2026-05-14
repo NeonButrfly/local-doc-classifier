@@ -80,6 +80,20 @@ def tail_text(value: str, max_chars: int = 8000) -> str:
 def elapsed_ms(started_at: float) -> float:
     return round((time.perf_counter() - started_at) * 1000, 3)
 
+def load_worker_timing(path: Path) -> Optional[dict]:
+    if not path.exists():
+        return None
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    finally:
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
 async def stage_uploaded_file(file: UploadFile) -> dict:
     original_name = safe_filename(file.filename or "upload.bin")
     ext = Path(original_name).suffix.lower()
@@ -159,6 +173,8 @@ async def classify_upload(
     total_started_at = time.perf_counter()
     staged = await stage_uploaded_file(file)
     staged_path = staged["staged_path"]
+    timing_output = ensure_inside(OUTPUT_ROOT / "_timing" / f"{uuid.uuid4().hex}.json", OUTPUT_ROOT)
+    timing_output.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         sys.executable,
@@ -168,6 +184,8 @@ async def classify_upload(
         str(VAULT_ROOT),
         "--output",
         str(OUTPUT_ROOT),
+        "--timing-output",
+        str(timing_output),
     ]
 
     if attach_originals:
@@ -190,6 +208,7 @@ async def classify_upload(
             timeout=1800,
         )
     classify_ms = elapsed_ms(classify_started_at)
+    worker_timing = load_worker_timing(timing_output)
 
     record = read_manifest_for_source(str(staged_path))
 
@@ -203,6 +222,7 @@ async def classify_upload(
         "upload_bytes_per_sec": staged["upload_bytes_per_sec"],
         "classify_ms": classify_ms,
         "total_ms": elapsed_ms(total_started_at),
+        "worker_timing": worker_timing,
         "manifest": str(MANIFEST_PATH),
         "classification_index": str(INDEX_PATH),
         "record": record,
