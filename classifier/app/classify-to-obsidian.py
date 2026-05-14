@@ -37,6 +37,7 @@ from hybrid_runtime import (
     maybe_retrain_from_shadow_data,
     process_shadow_queue_once,
     predict_lightgbm_result,
+    write_readiness_report,
 )
 
 ALASKA_TZ = ZoneInfo("America/Anchorage")
@@ -633,6 +634,8 @@ def process_shadow_queue_command(
     vision_model: str,
     max_chars: int,
 ) -> Dict[str, Any]:
+    gating_config = load_hybrid_gating_config()
+
     def shadow_classifier(job: Dict[str, Any]) -> Dict[str, Any]:
         mode = str(job.get("mode", "document"))
         if mode == "image":
@@ -672,6 +675,7 @@ def process_shadow_queue_command(
 
     result["updates"] = apply_disagreement_updates(comparisons=comparisons)
     result["retrain"] = maybe_retrain_from_shadow_data(min_rows=3)
+    result["readiness"] = write_readiness_report(gating_config=gating_config)
     return result
 
 def parse_document(path: Path, work_dir: Path) -> tuple[str, str]:
@@ -1123,6 +1127,7 @@ def main() -> int:
     parser.add_argument("--timing-output", default="", help="Optional JSON file path for per-run timing output.")
     parser.add_argument("--process-shadow-queue", action="store_true")
     parser.add_argument("--retrain-hybrid-model", action="store_true")
+    parser.add_argument("--write-readiness-report", action="store_true")
 
     args = parser.parse_args()
 
@@ -1150,6 +1155,11 @@ def main() -> int:
             vision_model=args.vision_model,
             max_chars=args.max_chars,
         )
+        print(json.dumps(result, indent=2))
+        return 0 if result.get("ok") else 1
+
+    if args.write_readiness_report:
+        result = write_readiness_report(gating_config=load_hybrid_gating_config())
         print(json.dumps(result, indent=2))
         return 0 if result.get("ok") else 1
 
@@ -1343,6 +1353,7 @@ def main() -> int:
                         "heuristic_result": heuristic_classification,
                         "lightgbm_result": (hybrid_meta or {}).get("lightgbm"),
                         "live_result": classification,
+                        "live_source": (hybrid_meta or {}).get("decision", {}).get("live_source", ""),
                         "taxonomy_candidates": (hybrid_meta or {}).get("taxonomy_candidates", []),
                         "text_preview": ((markdown or classification.get("summary", ""))[:12000]),
                     }
@@ -1377,6 +1388,7 @@ def main() -> int:
                 print(f"[FAIL] {source_path}: {e}", file=sys.stderr)
 
     write_index(vault, notes)
+    write_readiness_report(gating_config=gating_config)
 
     if args.timing_output:
         timing_output = Path(args.timing_output)

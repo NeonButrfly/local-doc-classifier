@@ -19,6 +19,7 @@ LIGHTGBM_MODEL_PATH = CONFIG_DIR / "lightgbm-classifier.joblib"
 LIGHTGBM_REPORT_PATH = CONFIG_DIR / "lightgbm-training-report.json"
 SHADOW_QUEUE_DIR = OUTPUT_ROOT / "shadow-queue"
 SHADOW_COMPARISONS_PATH = OUTPUT_ROOT / "shadow-comparisons.jsonl"
+READINESS_REPORT_PATH = OUTPUT_ROOT / "readiness-report.json"
 RETRAIN_DIR = OUTPUT_ROOT / "retrain"
 MANIFEST_PATH = OUTPUT_ROOT / "manifest.jsonl"
 CORRECTIONS_PATH = CONFIG_DIR / "corrections.jsonl"
@@ -31,11 +32,17 @@ DEFAULT_HYBRID_GATING = {
     "aligned_soft_confidence": 0.60,
     "needs_llm_threshold": 0.45,
     "disagreement_risk_threshold": 0.35,
+    "teacher_confidence_threshold": 0.85,
     "shadow_mode": "all",
     "shadow_sample_rate": 1.0,
     "auto_retrain_enabled": True,
     "auto_threshold_update_enabled": True,
     "auto_inline_disagreement_threshold": 3,
+    "readiness_min_teacher_samples": 8,
+    "readiness_min_teacher_agreement_rate": 0.80,
+    "readiness_min_teacher_approval_rate": 0.70,
+    "readiness_max_queue_depth": 25,
+    "allow_real_ingestion": False,
 }
 
 DEFAULT_HEURISTIC_RULES = {
@@ -84,6 +91,13 @@ def load_heuristic_rules(path: Optional[Path] = None) -> Dict[str, Any]:
         else:
             merged[key] = value
     return merged
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
 
 
 def choose_live_decision(
@@ -148,6 +162,7 @@ def build_shadow_record(
     llm_result: Optional[Dict[str, Any]],
     taxonomy_candidates: list[str],
     text_preview: str,
+    live_source: str = "",
 ) -> Dict[str, Any]:
     heuristic_result = heuristic_result or {}
     lightgbm_result = lightgbm_result or {}
@@ -158,6 +173,12 @@ def build_shadow_record(
     lightgbm_primary = str(lightgbm_result.get("top_label", "unknown") or "unknown")
     live_primary = str(live_result.get("primary_label", "unknown") or "unknown")
     shadow_primary = str(llm_result.get("primary_label", "unknown") or "unknown")
+    teacher_review = evaluate_teacher_result(
+        llm_result=llm_result,
+        taxonomy_candidates=taxonomy_candidates,
+        live_result=live_result,
+        gating_config=load_hybrid_gating_config(),
+    )
 
     return {
         "recorded_at": utc_now(),
@@ -171,11 +192,62 @@ def build_shadow_record(
         "needs_llm_probability": lightgbm_result.get("needs_llm_probability"),
         "disagreement_risk": lightgbm_result.get("disagreement_risk"),
         "live_primary": live_primary,
+        "live_source": live_source,
         "shadow_primary": shadow_primary,
         "shadow_confidence": llm_result.get("confidence"),
         "taxonomy_candidates": taxonomy_candidates,
         "disagreement": live_primary != shadow_primary,
+        "teacher_review_status": teacher_review["review_status"],
+        "teacher_reason": teacher_review["reason"],
+        "teacher_approved_for_training": teacher_review["teacher_approved_for_training"],
+        "teacher_supports_live_result": teacher_review["teacher_supports_live_result"],
+        "teacher_suggests_correction": teacher_review["teacher_suggests_correction"],
         "text_preview": text_preview[:4000],
+    }
+
+
+def evaluate_teacher_result(
+    llm_result: Optional[Dict[str, Any]],
+    taxonomy_candidates: list[str],
+    live_result: Optional[Dict[str, Any]],
+    gating_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    llm_result = llm_result or {}
+    live_result = live_result or {}
+    taxonomy_candidates = taxonomy_candidates or []
+
+    teacher_primary = str(llm_result.get("primary_label", "unknown") or "unknown")
+    live_primary = str(live_result.get("primary_label", "unknown") or "unknown")
+    teacher_confidence = safe_float(llm_result.get("confidence"), 0.0)
+    confidence_ok = teacher_confidence >= safe_float(gating_config.get("teacher_confidence_threshold"), 0.85)
+    in_candidate_set = not taxonomy_candidates or teacher_primary in taxonomy_candidates
+    supports_live = teacher_primary == live_primary
+    suggests_correction = teacher_primary != live_primary and teacher_primary != "unknown"
+
+    if not confidence_ok:
+        return {
+            "review_status": "teacher-low-confidence",
+            "reason": "teacher-confidence-below-threshold",
+            "teacher_approved_for_training": False,
+            "teacher_supports_live_result": supports_live,
+            "teacher_suggests_correction": False,
+        }
+
+    if not in_candidate_set:
+        return {
+            "review_status": "teacher-outside-candidates",
+            "reason": "teacher-label-outside-taxonomy-candidates",
+            "teacher_approved_for_training": False,
+            "teacher_supports_live_result": False,
+            "teacher_suggests_correction": False,
+        }
+
+    return {
+        "review_status": "teacher-approved",
+        "reason": "teacher-approved-for-training",
+        "teacher_approved_for_training": True,
+        "teacher_supports_live_result": supports_live,
+        "teacher_suggests_correction": suggests_correction,
     }
 
 
@@ -368,6 +440,7 @@ def process_shadow_queue_once(
             llm_result=llm_result,
             taxonomy_candidates=job.get("taxonomy_candidates", []) or [],
             text_preview=str(job.get("text_preview", "")),
+            live_source=str(job.get("live_source", "")),
         )
         append_jsonl(comparisons_path, comparison)
         try:
@@ -434,14 +507,16 @@ def maybe_retrain_from_shadow_data(
             if isinstance(item, dict):
                 comparisons.append(item)
 
-    if len(comparisons) < min_rows:
+    approved = [row for row in comparisons if row.get("teacher_approved_for_training")]
+    if len(approved) < min_rows:
         return {
             "retrained": False,
-            "training_rows": len(comparisons),
+            "training_rows": len(approved),
+            "teacher_approved_rows": len(approved),
         }
 
     training_rows = []
-    for row in comparisons:
+    for row in approved:
         training_rows.append(
             {
                 "filename": row.get("filename", ""),
@@ -464,6 +539,7 @@ def maybe_retrain_from_shadow_data(
     return {
         "retrained": True,
         "training_rows": len(training_rows),
+        "teacher_approved_rows": len(approved),
         "report": report,
     }
 
@@ -566,3 +642,79 @@ def ensure_lightgbm_model(
         report_path=report_path,
     )
     return {"ok": True, "created": True, "report": report}
+
+
+def build_readiness_report(
+    gating_config: Optional[Dict[str, Any]] = None,
+    comparisons_path: Path = SHADOW_COMPARISONS_PATH,
+    queue_dir: Path = SHADOW_QUEUE_DIR,
+    model_path: Path = LIGHTGBM_MODEL_PATH,
+) -> Dict[str, Any]:
+    gating = gating_config or load_hybrid_gating_config()
+    comparisons = read_jsonl(comparisons_path, limit=500)
+    queue_depth = len(list(queue_dir.glob("*.json"))) if queue_dir.exists() else 0
+    model_exists = model_path.exists()
+
+    approved = [row for row in comparisons if row.get("teacher_approved_for_training")]
+    agreements = [row for row in approved if row.get("teacher_supports_live_result")]
+    approval_rate = (len(approved) / len(comparisons)) if comparisons else 0.0
+    agreement_rate = (len(agreements) / len(approved)) if approved else 0.0
+
+    min_samples = int(gating.get("readiness_min_teacher_samples", 8))
+    min_agreement = safe_float(gating.get("readiness_min_teacher_agreement_rate"), 0.80)
+    min_approval = safe_float(gating.get("readiness_min_teacher_approval_rate"), 0.70)
+    max_queue_depth = int(gating.get("readiness_max_queue_depth", 25))
+    allow_real_ingestion = bool(gating.get("allow_real_ingestion", False))
+
+    thresholds_pass = (
+        model_exists
+        and len(approved) >= min_samples
+        and approval_rate >= min_approval
+        and agreement_rate >= min_agreement
+        and queue_depth <= max_queue_depth
+    )
+
+    warnings: list[str] = []
+    if not model_exists:
+        warnings.append("lightgbm-model-missing")
+    if len(approved) < min_samples:
+        warnings.append("insufficient-teacher-approved-samples")
+    if approval_rate < min_approval:
+        warnings.append("teacher-approval-rate-below-threshold")
+    if agreement_rate < min_agreement:
+        warnings.append("teacher-agreement-rate-below-threshold")
+    if queue_depth > max_queue_depth:
+        warnings.append("shadow-queue-backlog-too-deep")
+    if thresholds_pass and not allow_real_ingestion:
+        warnings.append("manual-real-ingestion-enable-still-required")
+
+    return {
+        "generated_at": utc_now(),
+        "ok": True,
+        "model_exists": model_exists,
+        "comparison_rows": len(comparisons),
+        "teacher_approved_rows": len(approved),
+        "teacher_live_agreement_rows": len(agreements),
+        "teacher_approval_rate": round(approval_rate, 6),
+        "teacher_agreement_rate": round(agreement_rate, 6),
+        "queue_depth": queue_depth,
+        "thresholds": {
+            "readiness_min_teacher_samples": min_samples,
+            "readiness_min_teacher_agreement_rate": min_agreement,
+            "readiness_min_teacher_approval_rate": min_approval,
+            "readiness_max_queue_depth": max_queue_depth,
+        },
+        "thresholds_pass": thresholds_pass,
+        "allow_real_ingestion": allow_real_ingestion,
+        "real_ingestion_allowed": thresholds_pass and allow_real_ingestion,
+        "warnings": warnings,
+    }
+
+
+def write_readiness_report(
+    gating_config: Optional[Dict[str, Any]] = None,
+    readiness_path: Path = READINESS_REPORT_PATH,
+) -> Dict[str, Any]:
+    report = build_readiness_report(gating_config=gating_config)
+    save_json(readiness_path, report)
+    return report

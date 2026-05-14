@@ -5,8 +5,14 @@
   "aligned_soft_confidence": 0.6,
   "needs_llm_threshold": 0.45,
   "disagreement_risk_threshold": 0.35,
+  "teacher_confidence_threshold": 0.85,
   "shadow_mode": "all",
   "shadow_sample_rate": 1.0,
   "auto_retrain_enabled": true,
-  "auto_threshold_update_enabled": true
+  "auto_threshold_update_enabled": true,
+  "readiness_min_teacher_samples": 8,
+  "readiness_min_teacher_agreement_rate": 0.8,
+  "readiness_min_teacher_approval_rate": 0.7,
+  "readiness_max_queue_depth": 25,
+  "allow_real_ingestion": false
 }

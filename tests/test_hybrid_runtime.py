@@ -156,7 +156,7 @@ class HybridRuntimeTests(unittest.TestCase):
             heuristic_result={"primary_label": "legal", "confidence": 0.97},
             lightgbm_result={"top_label": "legal", "top_probability": 0.92},
             live_result={"primary_label": "legal", "secondary_labels": ["contract"]},
-            llm_result={"primary_label": "technical", "secondary_labels": ["report"], "confidence": 0.84},
+            llm_result={"primary_label": "technical", "secondary_labels": ["report"], "confidence": 0.91},
             taxonomy_candidates=["legal", "contract", "technical", "report"],
             text_preview="Synthetic Vendor Service Agreement",
         )
@@ -166,6 +166,55 @@ class HybridRuntimeTests(unittest.TestCase):
         self.assertEqual(shadow["shadow_primary"], "technical")
         self.assertEqual(shadow["live_primary"], "legal")
         self.assertIn("technical", shadow["taxonomy_candidates"])
+        self.assertEqual(shadow["teacher_review_status"], "teacher-approved")
+        self.assertTrue(shadow["teacher_approved_for_training"])
+
+    def test_evaluate_teacher_result_rejects_low_confidence_labels(self):
+        teacher = hybrid_runtime.evaluate_teacher_result(
+            llm_result={"primary_label": "legal", "confidence": 0.4},
+            taxonomy_candidates=["legal", "contract", "policy"],
+            live_result={"primary_label": "legal"},
+            gating_config={"teacher_confidence_threshold": 0.85},
+        )
+
+        self.assertEqual(teacher["review_status"], "teacher-low-confidence")
+        self.assertFalse(teacher["teacher_approved_for_training"])
+
+    def test_build_readiness_report_requires_manual_enable_even_after_thresholds(self):
+        queue_dir = self.root / "shadow-queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        comparisons_path = self.root / "shadow-comparisons.jsonl"
+        model_path = self.root / "lightgbm-classifier.joblib"
+        model_path.write_text("model", encoding="utf-8")
+
+        rows = [
+            {
+                "teacher_approved_for_training": True,
+                "teacher_supports_live_result": True,
+            }
+            for _ in range(8)
+        ]
+        comparisons_path.write_text(
+            "\n".join(json.dumps(row) for row in rows) + "\n",
+            encoding="utf-8",
+        )
+
+        report = hybrid_runtime.build_readiness_report(
+            gating_config={
+                "readiness_min_teacher_samples": 8,
+                "readiness_min_teacher_agreement_rate": 0.80,
+                "readiness_min_teacher_approval_rate": 0.70,
+                "readiness_max_queue_depth": 25,
+                "allow_real_ingestion": False,
+            },
+            comparisons_path=comparisons_path,
+            queue_dir=queue_dir,
+            model_path=model_path,
+        )
+
+        self.assertTrue(report["thresholds_pass"])
+        self.assertFalse(report["real_ingestion_allowed"])
+        self.assertIn("manual-real-ingestion-enable-still-required", report["warnings"])
 
     def test_load_and_save_hybrid_config_round_trip(self):
         path = self.root / "hybrid-gating.json"

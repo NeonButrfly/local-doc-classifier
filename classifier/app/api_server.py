@@ -17,6 +17,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from category_manager import load_categories, load_groups
+from hybrid_runtime import READINESS_REPORT_PATH, load_json
 
 APP = FastAPI(title="Local Document Classifier API", version="1.0.0")
 
@@ -215,10 +216,19 @@ async def classify_upload(
     categories: Optional[str] = Form(default=None),
     attach_originals: bool = Form(default=True),
     no_vision: bool = Form(default=False),
+    ingestion_mode: str = Form(default="adhoc"),
     x_api_key: Optional[str] = Header(default=None),
 ):
     check_token(x_api_key)
     maybe_start_shadow_worker()
+    if ingestion_mode == "real-folder":
+        readiness = load_json(READINESS_REPORT_PATH, default={}) or {}
+        if not readiness.get("real_ingestion_allowed"):
+            reason = ", ".join(readiness.get("warnings", []) or ["readiness-report-missing-or-blocked"])
+            raise HTTPException(
+                status_code=409,
+                detail=f"Real-folder ingestion is blocked until readiness thresholds pass and allow_real_ingestion is enabled: {reason}",
+            )
     total_started_at = time.perf_counter()
     staged = await stage_uploaded_file(file)
     staged_path = staged["staged_path"]
@@ -274,9 +284,20 @@ async def classify_upload(
         "worker_timing": worker_timing,
         "manifest": str(MANIFEST_PATH),
         "classification_index": str(INDEX_PATH),
+        "ingestion_mode": ingestion_mode,
         "record": record,
         "stdout_tail": tail_text(proc.stdout),
         "stderr_tail": tail_text(proc.stderr),
+    }
+
+@APP.get("/readiness")
+def get_readiness(x_api_key: Optional[str] = Header(default=None)):
+    check_token(x_api_key)
+    report = load_json(READINESS_REPORT_PATH, default={}) or {}
+    return {
+        "ok": True,
+        "readiness_path": str(READINESS_REPORT_PATH),
+        "report": report,
     }
 
 @APP.post("/benchmark/upload-only")

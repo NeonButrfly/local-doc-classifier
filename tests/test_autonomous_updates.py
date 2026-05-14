@@ -60,6 +60,7 @@ class AutonomousUpdatesTests(unittest.TestCase):
                         "lightgbm_primary": "legal",
                         "live_primary": "legal",
                         "shadow_primary": "contract",
+                        "teacher_approved_for_training": True,
                         "taxonomy_candidates": ["legal", "contract", "policy"],
                         "text_preview": "agreement confidentiality payment governing law",
                         "disagreement": True,
@@ -85,6 +86,45 @@ class AutonomousUpdatesTests(unittest.TestCase):
 
         self.assertTrue(result["retrained"])
         mocked_train.assert_called_once()
+
+    def test_process_shadow_queue_skips_unapproved_teacher_rows_for_retraining(self):
+        self.comparisons_path.write_text(
+            "\n".join(
+                json.dumps(
+                    {
+                        "filename": f"fixture-{index}.pdf",
+                        "extension": ".pdf",
+                        "parser": "pdftotext",
+                        "heuristic_primary": "legal",
+                        "lightgbm_primary": "legal",
+                        "live_primary": "legal",
+                        "shadow_primary": "contract",
+                        "teacher_approved_for_training": False,
+                        "taxonomy_candidates": ["legal", "contract", "policy"],
+                        "text_preview": "agreement confidentiality payment governing law",
+                        "disagreement": True,
+                    }
+                )
+                for index in range(3)
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with patch.object(
+            hybrid_runtime,
+            "train_lightgbm_model",
+            return_value={"ok": True, "training_rows": 3},
+        ) as mocked_train:
+            result = hybrid_runtime.maybe_retrain_from_shadow_data(
+                comparisons_path=self.comparisons_path,
+                model_path=self.root / "lightgbm-classifier.joblib",
+                report_path=self.root / "lightgbm-training-report.json",
+                min_rows=3,
+            )
+
+        self.assertFalse(result["retrained"])
+        mocked_train.assert_not_called()
 
 
 if __name__ == "__main__":

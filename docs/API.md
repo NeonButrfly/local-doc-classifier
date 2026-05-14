@@ -58,6 +58,8 @@ Autonomous runtime behavior:
 - fast-path text documents may be validated by LightGBM before deciding whether to call the LLM inline
 - background shadow-mode review runs through a queue on the server
 - disagreement evidence can retrain the LightGBM artifact and update heuristic config thresholds without editing source code
+- shadow comparisons now record whether the LLM teacher approved the row for future training
+- real-folder ingestion can be blocked until the readiness report passes and manual enablement is turned on
 
 ## POST /benchmark/upload-only
 
@@ -72,6 +74,17 @@ curl -sS \
 ```
 
 Useful for separating LAN upload/staging time from decision-making time.
+
+## GET /readiness
+
+Returns the latest autonomous-readiness report written by the classifier runtime.
+
+Key fields:
+
+- `thresholds_pass`: whether the current teacher/queue/model thresholds are satisfied
+- `allow_real_ingestion`: explicit config flag for enabling real-folder ingestion
+- `real_ingestion_allowed`: true only when thresholds pass and the explicit allow flag is enabled
+- `warnings`: reasons the system is still blocked
 
 ## GET /recent
 
@@ -96,3 +109,12 @@ Returns correction memory.
 ## POST /corrections
 
 Adds correction memory.
+
+## Real-folder ingestion guard
+
+`POST /classify/upload` also accepts:
+
+- `ingestion_mode=adhoc` for normal/manual uploads
+- `ingestion_mode=real-folder` for future bulk folder/plugin ingestion
+
+If `ingestion_mode=real-folder` is used while readiness is still blocked, the API returns `409` instead of accepting the file.

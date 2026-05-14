@@ -79,6 +79,9 @@ Hybrid/autonomous classifier notes:
 - obvious PDF, DOCX, and XLSX fixtures may return through the fast heuristic path when LightGBM agrees
 - ambiguous cases can still call the taxonomy-aware LLM inline
 - the live server can enqueue shadow comparisons and retraining work in the background
+- the shadow LLM now acts as a teacher and only teacher-approved rows are eligible for autonomous retraining
+- readiness for future real-folder ingestion is exposed through `GET /readiness`
+- real-folder/plugin-style ingestion should stay blocked until the readiness report passes and manual enablement is turned on
 
 Results are written to:
 

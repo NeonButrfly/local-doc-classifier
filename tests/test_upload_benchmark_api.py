@@ -29,6 +29,7 @@ class UploadBenchmarkApiTests(unittest.TestCase):
         api_server.VAULT_ROOT = root / "vault"
         api_server.MANIFEST_PATH = api_server.OUTPUT_ROOT / "manifest.jsonl"
         api_server.INDEX_PATH = api_server.VAULT_ROOT / "Classification Index.md"
+        api_server.READINESS_REPORT_PATH = api_server.OUTPUT_ROOT / "readiness-report.json"
 
         api_server.INPUT_ROOT.mkdir(parents=True, exist_ok=True)
         api_server.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -144,6 +145,45 @@ class UploadBenchmarkApiTests(unittest.TestCase):
 
         self.assertEqual(len(calls), 1)
         self.assertIn("--process-shadow-queue", calls[0][0])
+
+    def test_classify_upload_blocks_real_folder_ingestion_when_readiness_is_not_allowed(self):
+        payload = b"classify-me" * 1024
+        readiness_path = api_server.READINESS_REPORT_PATH
+        readiness_path.parent.mkdir(parents=True, exist_ok=True)
+        readiness_path.write_text(
+            json.dumps(
+                {
+                    "real_ingestion_allowed": False,
+                    "warnings": ["manual-real-ingestion-enable-still-required"],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        response = self.client.post(
+            "/classify/upload",
+            headers=self.headers,
+            data={"ingestion_mode": "real-folder"},
+            files={"file": ("fixture.pdf", payload, "application/pdf")},
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn("Real-folder ingestion is blocked", response.text)
+
+    def test_readiness_endpoint_returns_current_report(self):
+        readiness_path = api_server.READINESS_REPORT_PATH
+        readiness_path.parent.mkdir(parents=True, exist_ok=True)
+        readiness_path.write_text(
+            json.dumps({"thresholds_pass": True, "real_ingestion_allowed": False}),
+            encoding="utf-8",
+        )
+
+        response = self.client.get("/readiness", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertTrue(body["report"]["thresholds_pass"])
 
 
 if __name__ == "__main__":
