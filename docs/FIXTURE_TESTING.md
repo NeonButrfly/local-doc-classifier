@@ -41,6 +41,20 @@ Or with a pasted token:
 .\tests\windows\Test-LocalClassifier.ps1 -Token "PASTE_TOKEN_HERE"
 ```
 
+## Run tests from Linux or Raspberry Pi
+
+```bash
+cd /path/to/local-doc-classifier
+chmod +x ./tests/linux/test-local-classifier.sh
+./tests/linux/test-local-classifier.sh --server 192.168.50.196 --token "PASTE_TOKEN_HERE"
+```
+
+Or fetch the token over SSH if your Pi can read the deployment host:
+
+```bash
+./tests/linux/test-local-classifier.sh --server 192.168.50.196 --fetch-token-over-ssh
+```
+
 Results are written to:
 
 ```text
