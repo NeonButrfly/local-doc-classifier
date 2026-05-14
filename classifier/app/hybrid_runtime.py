@@ -109,8 +109,10 @@ def choose_live_decision(
     aligned_soft_ready = aligned and model_confidence >= float(gating_config.get("aligned_soft_confidence", 0.60))
     low_llm_need = needs_llm_probability < float(gating_config["needs_llm_threshold"])
     low_disagreement = disagreement_risk < float(gating_config["disagreement_risk_threshold"])
+    strong_alignment = aligned and heuristic_ready and model_ready and low_disagreement
+    soft_alignment = aligned and heuristic_ready and aligned_soft_ready and low_llm_need and low_disagreement
 
-    if aligned and heuristic_ready and low_llm_need and low_disagreement and (model_ready or aligned_soft_ready):
+    if strong_alignment or soft_alignment:
         return {
             "use_inline_llm": False,
             "live_source": "heuristic-fast-path",
