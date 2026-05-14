@@ -28,6 +28,7 @@ DEFAULT_HYBRID_GATING = {
     "mode": "hybrid",
     "heuristic_fast_confidence": 0.92,
     "lightgbm_fast_confidence": 0.80,
+    "aligned_soft_confidence": 0.60,
     "needs_llm_threshold": 0.45,
     "disagreement_risk_threshold": 0.35,
     "shadow_mode": "all",
@@ -105,10 +106,11 @@ def choose_live_decision(
     aligned = heuristic_primary == model_primary
     heuristic_ready = heuristic_confidence >= float(gating_config["heuristic_fast_confidence"])
     model_ready = model_confidence >= float(gating_config["lightgbm_fast_confidence"])
+    aligned_soft_ready = aligned and model_confidence >= float(gating_config.get("aligned_soft_confidence", 0.60))
     low_llm_need = needs_llm_probability < float(gating_config["needs_llm_threshold"])
     low_disagreement = disagreement_risk < float(gating_config["disagreement_risk_threshold"])
 
-    if aligned and heuristic_ready and model_ready and low_llm_need and low_disagreement:
+    if aligned and heuristic_ready and low_llm_need and low_disagreement and (model_ready or aligned_soft_ready):
         return {
             "use_inline_llm": False,
             "live_source": "heuristic-fast-path",

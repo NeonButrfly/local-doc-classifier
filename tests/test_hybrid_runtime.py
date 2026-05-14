@@ -58,6 +58,7 @@ class HybridRuntimeTests(unittest.TestCase):
         gating = {
             "heuristic_fast_confidence": 0.92,
             "lightgbm_fast_confidence": 0.80,
+            "aligned_soft_confidence": 0.60,
             "needs_llm_threshold": 0.45,
             "disagreement_risk_threshold": 0.35,
         }
@@ -84,6 +85,37 @@ class HybridRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["live_source"], "inline-llm")
         self.assertEqual(decision["selected_primary_hint"], "technical")
         self.assertEqual(decision["decision_reason"], "model-required")
+
+    def test_choose_live_decision_keeps_fast_path_for_aligned_soft_confidence(self):
+        gating = {
+            "heuristic_fast_confidence": 0.92,
+            "lightgbm_fast_confidence": 0.80,
+            "aligned_soft_confidence": 0.60,
+            "needs_llm_threshold": 0.45,
+            "disagreement_risk_threshold": 0.35,
+        }
+        heuristic = {
+            "primary_label": "spreadsheet",
+            "confidence": 0.98,
+            "secondary_labels": ["financial", "work", "report"],
+        }
+        lightgbm_result = {
+            "top_label": "spreadsheet",
+            "top_probability": 0.68,
+            "needs_llm_probability": 0.01,
+            "disagreement_risk": 0.01,
+        }
+
+        decision = hybrid_runtime.choose_live_decision(
+            heuristic_result=heuristic,
+            lightgbm_result=lightgbm_result,
+            gating_config=gating,
+            candidate_categories=["spreadsheet", "financial", "work", "report"],
+        )
+
+        self.assertFalse(decision["use_inline_llm"])
+        self.assertEqual(decision["live_source"], "heuristic-fast-path")
+        self.assertEqual(decision["decision_reason"], "fast-path-aligned")
 
     def test_build_shadow_record_marks_disagreement(self):
         shadow = hybrid_runtime.build_shadow_record(
