@@ -65,6 +65,8 @@ class SpreadsheetFastPathTests(unittest.TestCase):
         self.assertIn("financial", classification["secondary_labels"])
         self.assertIn("work", classification["secondary_labels"])
         self.assertIn("report", classification["secondary_labels"])
+        self.assertNotIn("medical", classification["secondary_labels"])
+        self.assertNotIn("medical", classification["sensitive_flags"])
         self.assertGreaterEqual(classification["confidence"], 0.9)
         self.assertEqual(metadata["parser"], "spreadsheet-openpyxl")
         self.assertIn("budget", classification["reason"].lower())

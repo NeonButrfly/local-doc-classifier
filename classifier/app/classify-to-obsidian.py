@@ -180,30 +180,34 @@ def parse_spreadsheet_fast(
     non_empty_preview_cells = 0
 
     for worksheet in workbook.worksheets[:max_sheets]:
+        title_lower = worksheet.title.lower()
+        is_metadata_sheet = any(token in title_lower for token in ["expectation", "fixture", "metadata"])
         preview_rows: List[List[str]] = []
 
-        for row_index, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
-            if row_index > max_rows:
-                break
+        if not is_metadata_sheet:
+            for row_index, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+                if row_index > max_rows:
+                    break
 
-            values: List[str] = []
-            has_value = False
+                values: List[str] = []
+                has_value = False
 
-            for cell in row[:max_cols]:
-                value = "" if cell is None else str(cell).strip().replace("\n", " ")
-                value = value[:max_cell_chars]
-                if value:
-                    has_value = True
-                    non_empty_preview_cells += 1
-                values.append(value)
+                for cell in row[:max_cols]:
+                    value = "" if cell is None else str(cell).strip().replace("\n", " ")
+                    value = value[:max_cell_chars]
+                    if value:
+                        has_value = True
+                        non_empty_preview_cells += 1
+                    values.append(value)
 
-            if has_value:
-                preview_rows.append(values)
+                if has_value:
+                    preview_rows.append(values)
 
         sheet_summaries.append(
             {
                 "title": worksheet.title,
                 "preview_rows": preview_rows,
+                "is_metadata_sheet": is_metadata_sheet,
             }
         )
 
@@ -218,6 +222,10 @@ def parse_spreadsheet_fast(
         lines.append(f"## Sheet: {sheet['title']}")
 
         preview_rows = sheet["preview_rows"]
+        if sheet.get("is_metadata_sheet"):
+            lines.append("- Metadata-style sheet omitted from classification preview.")
+            continue
+
         if not preview_rows:
             lines.append("- No preview rows with visible values.")
             continue
