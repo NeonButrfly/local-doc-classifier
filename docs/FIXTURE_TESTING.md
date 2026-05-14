@@ -12,8 +12,8 @@ These files contain no real personal, medical, financial, legal, infrastructure,
 
 | File | Type | Expected behavior |
 |---|---|---|
-| `synthetic_vendor_service_agreement.pdf` | Legal PDF | `legal`, `contract`, `policy`, or `work` |
-| `synthetic_network_incident_report.docx` | Technical Word doc | `technical`, `work`, `report`, or `policy` |
+| `synthetic_vendor_service_agreement.pdf` | Legal PDF | `legal`, `contract`, `policy`, or `work`; should prefer the fast document path when text extraction is clean |
+| `synthetic_network_incident_report.docx` | Technical Word doc | `technical`, `work`, `report`, or `policy`; should prefer the fast document path when the incident-report structure is clear |
 | `synthetic_quarterly_budget_forecast.xlsx` | Spreadsheet | `financial`, `spreadsheet`, `work`, or `report`; should use the fast spreadsheet path rather than slow OCR/LLM classification |
 | `synthetic_snowy_industrial_waystation_reference.jpg` | Image | `reference-image`, `concept-art`, `environment-art`, or `image-only` |
 

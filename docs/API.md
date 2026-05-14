@@ -40,7 +40,7 @@ Typical `worker_timing` fields:
 
 - `mode`: `document` or `image`
 - `parser`: parser path used for document files such as `docling`, `docling-converted`, `plain-text`, or `html-plain`
-- `classifier`: optional classifier path used for special fast lanes such as `heuristic-spreadsheet-fast-path`
+- `classifier`: optional classifier path used for special fast lanes such as `heuristic-spreadsheet-fast-path` or `heuristic-document-fast-path`
 - `parse_ms`: time spent extracting text or Markdown before the model call
 - `model_ms`: time spent waiting on the Ollama model response; this may be `0` for deterministic fast paths
 - `note_write_ms`: time spent writing the Obsidian note and extracted Markdown
