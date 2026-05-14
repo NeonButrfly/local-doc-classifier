@@ -655,9 +655,10 @@ def build_readiness_report(
     queue_depth = len(list(queue_dir.glob("*.json"))) if queue_dir.exists() else 0
     model_exists = model_path.exists()
 
+    reviewed = [row for row in comparisons if row.get("teacher_review_status")]
     approved = [row for row in comparisons if row.get("teacher_approved_for_training")]
     agreements = [row for row in approved if row.get("teacher_supports_live_result")]
-    approval_rate = (len(approved) / len(comparisons)) if comparisons else 0.0
+    approval_rate = (len(approved) / len(reviewed)) if reviewed else 0.0
     agreement_rate = (len(agreements) / len(approved)) if approved else 0.0
 
     min_samples = int(gating.get("readiness_min_teacher_samples", 8))
@@ -693,6 +694,7 @@ def build_readiness_report(
         "ok": True,
         "model_exists": model_exists,
         "comparison_rows": len(comparisons),
+        "teacher_reviewed_rows": len(reviewed),
         "teacher_approved_rows": len(approved),
         "teacher_live_agreement_rows": len(agreements),
         "teacher_approval_rate": round(approval_rate, 6),

@@ -189,6 +189,7 @@ class HybridRuntimeTests(unittest.TestCase):
 
         rows = [
             {
+                "teacher_review_status": "teacher-approved",
                 "teacher_approved_for_training": True,
                 "teacher_supports_live_result": True,
             }
@@ -213,8 +214,46 @@ class HybridRuntimeTests(unittest.TestCase):
         )
 
         self.assertTrue(report["thresholds_pass"])
+        self.assertEqual(report["teacher_reviewed_rows"], 8)
         self.assertFalse(report["real_ingestion_allowed"])
         self.assertIn("manual-real-ingestion-enable-still-required", report["warnings"])
+
+    def test_build_readiness_report_ignores_legacy_unreviewed_comparisons(self):
+        queue_dir = self.root / "shadow-queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        comparisons_path = self.root / "shadow-comparisons.jsonl"
+        model_path = self.root / "lightgbm-classifier.joblib"
+        model_path.write_text("model", encoding="utf-8")
+
+        rows = [
+            {"live_primary": "legal", "shadow_primary": "legal"},
+            {
+                "teacher_review_status": "teacher-approved",
+                "teacher_approved_for_training": True,
+                "teacher_supports_live_result": True,
+            },
+        ]
+        comparisons_path.write_text(
+            "\n".join(json.dumps(row) for row in rows) + "\n",
+            encoding="utf-8",
+        )
+
+        report = hybrid_runtime.build_readiness_report(
+            gating_config={
+                "readiness_min_teacher_samples": 1,
+                "readiness_min_teacher_agreement_rate": 0.80,
+                "readiness_min_teacher_approval_rate": 0.70,
+                "readiness_max_queue_depth": 25,
+                "allow_real_ingestion": False,
+            },
+            comparisons_path=comparisons_path,
+            queue_dir=queue_dir,
+            model_path=model_path,
+        )
+
+        self.assertEqual(report["comparison_rows"], 2)
+        self.assertEqual(report["teacher_reviewed_rows"], 1)
+        self.assertEqual(report["teacher_approval_rate"], 1.0)
 
     def test_load_and_save_hybrid_config_round_trip(self):
         path = self.root / "hybrid-gating.json"
