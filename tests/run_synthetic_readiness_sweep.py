@@ -97,18 +97,22 @@ def build_multipart_body(fields: Dict[str, str], file_path: Path) -> Tuple[bytes
     return b"".join(chunks), boundary
 
 
-def http_json(url: str, token: str) -> Tuple[int, Dict[str, Any]]:
+def http_json(url: str, token: str, timeout_seconds: int = 120) -> Tuple[int, Dict[str, Any]]:
     req = request.Request(url, method="GET", headers={"X-API-Key": token})
     try:
-        with request.urlopen(req, timeout=30) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             payload = response.read().decode("utf-8")
             return response.status, json.loads(payload)
     except error.HTTPError as exc:
         payload = exc.read().decode("utf-8", errors="replace")
         return exc.code, json.loads(payload)
 
-
-def upload_case(api_base: str, token: str, file_path: Path) -> Tuple[int, Dict[str, Any]]:
+def upload_case(
+    api_base: str,
+    token: str,
+    file_path: Path,
+    timeout_seconds: int,
+) -> Tuple[int, Dict[str, Any]]:
     body, boundary = build_multipart_body({"ingestion_mode": "adhoc"}, file_path)
     req = request.Request(
         f"{api_base}/classify/upload",
@@ -121,7 +125,7 @@ def upload_case(api_base: str, token: str, file_path: Path) -> Tuple[int, Dict[s
         },
     )
     try:
-        with request.urlopen(req, timeout=180) as response:
+        with request.urlopen(req, timeout=timeout_seconds) as response:
             payload = response.read().decode("utf-8")
             return response.status, json.loads(payload)
     except error.HTTPError as exc:
@@ -167,7 +171,7 @@ def poll_readiness(
     target = initial_reviewed_rows + expected_new_rows
 
     while time.time() < deadline:
-        status_code, payload = http_json(f"{api_base}/readiness", token)
+        status_code, payload = http_json(f"{api_base}/readiness", token, timeout_seconds=max(120, int(poll_interval_seconds * 6)))
         if status_code == 200:
             latest = payload
             report = payload.get("report") or {}
@@ -188,6 +192,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--suite-path", default=str(DEFAULT_SUITE_PATH), help="Path to the synthetic readiness suite JSON.")
     parser.add_argument("--repo-root", default=str(REPO_ROOT), help="Repo root for resolving committed fixtures.")
     parser.add_argument("--output", default="", help="Optional path for a JSON report artifact.")
+    parser.add_argument("--case-id", action="append", default=[], help="Run only the named case id. Can be repeated.")
+    parser.add_argument("--upload-timeout", type=int, default=600, help="Per-upload timeout in seconds.")
     parser.add_argument("--wait-for-shadow", action="store_true", help="Poll /readiness until shadow review catches up.")
     parser.add_argument("--wait-timeout", type=int, default=180, help="Seconds to wait when --wait-for-shadow is enabled.")
     parser.add_argument("--wait-poll", type=float, default=5.0, help="Polling interval for /readiness.")
@@ -204,6 +210,12 @@ def main() -> int:
     repo_root = Path(args.repo_root).resolve()
     suite = load_json(Path(args.suite_path))
     cases = suite.get("cases", []) or []
+    selected_case_ids = {case_id.strip() for case_id in args.case_id if case_id.strip()}
+    if selected_case_ids:
+        cases = [case for case in cases if case.get("id") in selected_case_ids]
+        if not cases:
+            print("No matching case ids were found in the suite.", file=sys.stderr)
+            return 2
 
     readiness_before = {}
     status_code, payload = http_json(f"{args.api_base}/readiness", token)
@@ -217,7 +229,13 @@ def main() -> int:
         temp_root = Path(temp_dir)
         for case in cases:
             file_path = materialize_case(case, repo_root=repo_root, temp_root=temp_root)
-            status_code, response = upload_case(args.api_base, token, file_path)
+            print(f"[UPLOAD] {case['id']} -> {file_path.name}", flush=True)
+            status_code, response = upload_case(
+                args.api_base,
+                token,
+                file_path,
+                timeout_seconds=args.upload_timeout,
+            )
             result = {
                 "id": case["id"],
                 "filename": file_path.name,

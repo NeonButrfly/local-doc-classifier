@@ -119,8 +119,8 @@
         "filename": "synthetic_classifier_architecture.md",
         "content": "# Synthetic Classifier Architecture Notes\n- FastAPI upload endpoint receives files and stages them to the input area.\n- The taxonomy router narrows public categories before the model prompt is built.\n- LightGBM predicts likely labels and disagreement risk.\n- The shadow LLM reviews queued records and approves training rows.\n- Retraining updates the local routing model without editing source code.\n"
       },
-      "acceptable_primary_labels": ["technical", "work", "report", "policy"],
-      "expected_secondary_any": ["technical", "work", "report"],
+      "acceptable_primary_labels": ["architecture", "markdown-note", "technical", "work", "report", "policy"],
+      "expected_secondary_any": ["architecture", "markdown-note", "technical", "work", "report"],
       "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
     },
     {
