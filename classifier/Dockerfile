@@ -4,6 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV TZ=America/Anchorage
 ENV PIP_ROOT_USER_ACTION=ignore
+ENV PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -25,6 +26,7 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
+    python -m pip install --no-cache-dir --index-url ${PYTORCH_CPU_INDEX_URL} torch torchvision && \
     python -m pip install --no-cache-dir -r /app/requirements.txt
 
 RUN python - <<'PY'
