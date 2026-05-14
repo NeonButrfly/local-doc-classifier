@@ -23,6 +23,10 @@ Expected labels are defined in:
 tests/fixtures/expected-labels.json
 ```
 
+Issue tracking:
+
+- [#1](https://github.com/NeonButrfly/local-doc-classifier/issues/1) finalizes the visual-reference label policy for the snowy industrial waystation fixture and requires the live API to normalize document-style image misclassifications back to `reference-image`.
+
 ## Run tests from Windows
 
 ```powershell
