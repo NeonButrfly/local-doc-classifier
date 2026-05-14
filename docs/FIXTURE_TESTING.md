@@ -55,6 +55,25 @@ Or fetch the token over SSH if your Pi can read the deployment host:
 ./tests/linux/test-local-classifier.sh --server 192.168.50.196 --fetch-token-over-ssh
 ```
 
+## Benchmark upload speed separately from classification
+
+From a Raspberry Pi or another Linux client:
+
+```bash
+cd /path/to/local-doc-classifier
+chmod +x ./tests/linux/benchmark-upload-vs-classify.sh
+./tests/linux/benchmark-upload-vs-classify.sh \
+  --server 192.168.50.196 \
+  --file tests/fixtures/synthetic_quarterly_budget_forecast.xlsx \
+  --token "PASTE_TOKEN_HERE" \
+  --repeats 3
+```
+
+That script hits both:
+
+- `/benchmark/upload-only` to measure transfer and staging time without decision-making
+- `/classify/upload` to compare the full end-to-end cost
+
 Results are written to:
 
 ```text

@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +77,43 @@ def tail_text(value: str, max_chars: int = 8000) -> str:
         return ""
     return value[-max_chars:]
 
+def elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 3)
+
+async def stage_uploaded_file(file: UploadFile) -> dict:
+    original_name = safe_filename(file.filename or "upload.bin")
+    ext = Path(original_name).suffix.lower()
+
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(status_code=415, detail=f"Unsupported extension: {ext}")
+
+    INPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    staged_name = f"{uuid.uuid4().hex}-{original_name}"
+    staged_path = ensure_inside(INPUT_ROOT / staged_name, INPUT_ROOT)
+
+    bytes_received = 0
+    upload_started_at = time.perf_counter()
+
+    with staged_path.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+            bytes_received += len(chunk)
+
+    upload_ms = elapsed_ms(upload_started_at)
+    upload_bytes_per_sec = round(bytes_received / (upload_ms / 1000), 3) if upload_ms > 0 else None
+
+    return {
+        "filename": original_name,
+        "extension": ext,
+        "staged_path": staged_path,
+        "bytes_received": bytes_received,
+        "upload_ms": upload_ms,
+        "upload_bytes_per_sec": upload_bytes_per_sec,
+    }
+
 @APP.get("/health")
 def health(x_api_key: Optional[str] = Header(default=None)):
     check_token(x_api_key)
@@ -118,23 +156,9 @@ async def classify_upload(
     x_api_key: Optional[str] = Header(default=None),
 ):
     check_token(x_api_key)
-
-    original_name = safe_filename(file.filename or "upload.bin")
-    ext = Path(original_name).suffix.lower()
-
-    if ext not in SUPPORTED_EXTENSIONS:
-        raise HTTPException(status_code=415, detail=f"Unsupported extension: {ext}")
-
-    INPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    staged_name = f"{uuid.uuid4().hex}-{original_name}"
-    staged_path = ensure_inside(INPUT_ROOT / staged_name, INPUT_ROOT)
-
-    with staged_path.open("wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            out.write(chunk)
+    total_started_at = time.perf_counter()
+    staged = await stage_uploaded_file(file)
+    staged_path = staged["staged_path"]
 
     cmd = [
         sys.executable,
@@ -155,6 +179,7 @@ async def classify_upload(
     if categories:
         cmd.extend(["--categories", categories])
 
+    classify_started_at = time.perf_counter()
     with LOCK:
         proc = subprocess.run(
             cmd,
@@ -164,18 +189,52 @@ async def classify_upload(
             stderr=subprocess.PIPE,
             timeout=1800,
         )
+    classify_ms = elapsed_ms(classify_started_at)
 
     record = read_manifest_for_source(str(staged_path))
 
     return {
         "ok": proc.returncode == 0,
         "returncode": proc.returncode,
+        "filename": staged["filename"],
         "staged_path": str(staged_path),
+        "bytes_received": staged["bytes_received"],
+        "upload_ms": staged["upload_ms"],
+        "upload_bytes_per_sec": staged["upload_bytes_per_sec"],
+        "classify_ms": classify_ms,
+        "total_ms": elapsed_ms(total_started_at),
         "manifest": str(MANIFEST_PATH),
         "classification_index": str(INDEX_PATH),
         "record": record,
         "stdout_tail": tail_text(proc.stdout),
         "stderr_tail": tail_text(proc.stderr),
+    }
+
+@APP.post("/benchmark/upload-only")
+async def benchmark_upload_only(
+    file: UploadFile = File(...),
+    cleanup: bool = Form(default=True),
+    x_api_key: Optional[str] = Header(default=None),
+):
+    check_token(x_api_key)
+    total_started_at = time.perf_counter()
+    staged = await stage_uploaded_file(file)
+    staged_path = staged["staged_path"]
+
+    if cleanup and staged_path.exists():
+        staged_path.unlink()
+
+    return {
+        "ok": True,
+        "filename": staged["filename"],
+        "extension": staged["extension"],
+        "staged_path": str(staged_path),
+        "bytes_received": staged["bytes_received"],
+        "upload_ms": staged["upload_ms"],
+        "upload_bytes_per_sec": staged["upload_bytes_per_sec"],
+        "cleanup": cleanup,
+        "staged_file_exists_after_response": staged_path.exists(),
+        "total_ms": elapsed_ms(total_started_at),
     }
 
 @APP.get("/index", response_class=PlainTextResponse)

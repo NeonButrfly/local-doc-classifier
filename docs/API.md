@@ -29,6 +29,26 @@ curl -sS \
 
 Important: include `filename=...` or image extension handling may fail.
 
+The response also includes:
+
+- `upload_ms`: server-side time spent receiving and staging the multipart upload
+- `classify_ms`: server-side time spent after upload on parsing/classification/note writing
+- `total_ms`: full server-side request time
+
+## POST /benchmark/upload-only
+
+Multipart upload benchmark that stages the file without invoking classification.
+
+```bash
+curl -sS \
+  -H "X-API-Key: ${TOKEN}" \
+  -F "cleanup=true" \
+  -F "file=@/path/to/file.pdf;filename=file.pdf;type=application/pdf" \
+  http://127.0.0.1:4319/benchmark/upload-only
+```
+
+Useful for separating LAN upload/staging time from decision-making time.
+
 ## GET /recent
 
 Returns recent manifest records.
