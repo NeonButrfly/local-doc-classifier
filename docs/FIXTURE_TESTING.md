@@ -82,6 +82,35 @@ Hybrid/autonomous classifier notes:
 - the shadow LLM now acts as a teacher and only teacher-approved rows are eligible for autonomous retraining
 - readiness for future real-folder ingestion is exposed through `GET /readiness`
 - real-folder/plugin-style ingestion should stay blocked until the readiness report passes and manual enablement is turned on
+- readiness now also checks breadth: distinct teacher-approved files, extension coverage, and label coverage
+
+## Run the broader synthetic readiness sweep
+
+The broader sweep generates additional synthetic `.txt`, `.md`, `.csv`, and `.html` cases on the fly, mixes them with the committed PDF/DOCX/XLSX/JPG fixtures, uploads them through the live API, and can wait for shadow-mode teacher review to catch up.
+
+```powershell
+cd C:\Code\local-doc-classifier
+$env:TOKEN = "PASTE_TOKEN_HERE"
+py -3 .\tests\run_synthetic_readiness_sweep.py `
+  --api-base http://192.168.50.196:4319 `
+  --wait-for-shadow `
+  --output .\tests\_classifier-test-results\synthetic-readiness-sweep.json
+```
+
+```bash
+cd /path/to/local-doc-classifier
+TOKEN="PASTE_TOKEN_HERE" \
+python3 ./tests/run_synthetic_readiness_sweep.py \
+  --api-base http://192.168.50.196:4319 \
+  --wait-for-shadow \
+  --output ./tests/_classifier-test-results/synthetic-readiness-sweep.json
+```
+
+The sweep definition lives in:
+
+```text
+tests/fixtures/synthetic-readiness-cases.json
+```
 
 Results are written to:
 

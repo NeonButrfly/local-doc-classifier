@@ -84,7 +84,17 @@ Key fields:
 - `thresholds_pass`: whether the current teacher/queue/model thresholds are satisfied
 - `allow_real_ingestion`: explicit config flag for enabling real-folder ingestion
 - `real_ingestion_allowed`: true only when thresholds pass and the explicit allow flag is enabled
+- `teacher_unique_files`: how many distinct teacher-approved files are represented in shadow comparisons
+- `teacher_extensions`: file-extension coverage from teacher-approved rows
+- `teacher_labels`: label coverage from teacher-approved rows
 - `warnings`: reasons the system is still blocked
+
+The readiness gate is intentionally broader than a simple pass-count. A strong report should show:
+
+- enough teacher-approved rows overall
+- enough distinct files to avoid repeating the same synthetic sample
+- enough extension coverage across document and image paths
+- enough label coverage to prove the autonomy loop has seen a meaningful range
 
 ## GET /recent
 

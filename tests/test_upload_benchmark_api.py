@@ -174,7 +174,15 @@ class UploadBenchmarkApiTests(unittest.TestCase):
         readiness_path = api_server.READINESS_REPORT_PATH
         readiness_path.parent.mkdir(parents=True, exist_ok=True)
         readiness_path.write_text(
-            json.dumps({"thresholds_pass": True, "real_ingestion_allowed": False}),
+            json.dumps(
+                {
+                    "thresholds_pass": True,
+                    "real_ingestion_allowed": False,
+                    "teacher_unique_files": 10,
+                    "teacher_extensions": [".pdf", ".docx", ".xlsx", ".jpg", ".md", ".html"],
+                    "teacher_labels": ["legal", "report", "spreadsheet", "reference-image", "policy"],
+                }
+            ),
             encoding="utf-8",
         )
 

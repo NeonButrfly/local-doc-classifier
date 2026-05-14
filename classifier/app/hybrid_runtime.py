@@ -38,7 +38,10 @@ DEFAULT_HYBRID_GATING = {
     "auto_retrain_enabled": True,
     "auto_threshold_update_enabled": True,
     "auto_inline_disagreement_threshold": 3,
-    "readiness_min_teacher_samples": 8,
+    "readiness_min_teacher_samples": 10,
+    "readiness_min_unique_teacher_files": 10,
+    "readiness_min_teacher_extensions": 6,
+    "readiness_min_teacher_labels": 5,
     "readiness_min_teacher_agreement_rate": 0.80,
     "readiness_min_teacher_approval_rate": 0.70,
     "readiness_max_queue_depth": 25,
@@ -658,10 +661,41 @@ def build_readiness_report(
     reviewed = [row for row in comparisons if row.get("teacher_review_status")]
     approved = [row for row in comparisons if row.get("teacher_approved_for_training")]
     agreements = [row for row in approved if row.get("teacher_supports_live_result")]
+    approved_unique_files = sorted(
+        {
+            str(row.get("filename", "")).strip()
+            for row in approved
+            if str(row.get("filename", "")).strip()
+        }
+    )
+    approved_extensions = sorted(
+        {
+            str(row.get("extension", "")).strip().lower()
+            for row in approved
+            if str(row.get("extension", "")).strip()
+        }
+    )
+    approved_labels = sorted(
+        {
+            str(row.get("shadow_primary") or row.get("live_primary") or row.get("heuristic_primary") or "unknown").strip()
+            for row in approved
+            if str(row.get("shadow_primary") or row.get("live_primary") or row.get("heuristic_primary") or "").strip()
+        }
+    )
+    approved_parsers = sorted(
+        {
+            str(row.get("parser", "")).strip()
+            for row in approved
+            if str(row.get("parser", "")).strip()
+        }
+    )
     approval_rate = (len(approved) / len(reviewed)) if reviewed else 0.0
     agreement_rate = (len(agreements) / len(approved)) if approved else 0.0
 
-    min_samples = int(gating.get("readiness_min_teacher_samples", 8))
+    min_samples = int(gating.get("readiness_min_teacher_samples", 10))
+    min_unique_files = int(gating.get("readiness_min_unique_teacher_files", min_samples))
+    min_extensions = int(gating.get("readiness_min_teacher_extensions", 4))
+    min_labels = int(gating.get("readiness_min_teacher_labels", 4))
     min_agreement = safe_float(gating.get("readiness_min_teacher_agreement_rate"), 0.80)
     min_approval = safe_float(gating.get("readiness_min_teacher_approval_rate"), 0.70)
     max_queue_depth = int(gating.get("readiness_max_queue_depth", 25))
@@ -670,6 +704,9 @@ def build_readiness_report(
     thresholds_pass = (
         model_exists
         and len(approved) >= min_samples
+        and len(approved_unique_files) >= min_unique_files
+        and len(approved_extensions) >= min_extensions
+        and len(approved_labels) >= min_labels
         and approval_rate >= min_approval
         and agreement_rate >= min_agreement
         and queue_depth <= max_queue_depth
@@ -680,6 +717,12 @@ def build_readiness_report(
         warnings.append("lightgbm-model-missing")
     if len(approved) < min_samples:
         warnings.append("insufficient-teacher-approved-samples")
+    if len(approved_unique_files) < min_unique_files:
+        warnings.append("insufficient-unique-teacher-files")
+    if len(approved_extensions) < min_extensions:
+        warnings.append("insufficient-teacher-extension-coverage")
+    if len(approved_labels) < min_labels:
+        warnings.append("insufficient-teacher-label-coverage")
     if approval_rate < min_approval:
         warnings.append("teacher-approval-rate-below-threshold")
     if agreement_rate < min_agreement:
@@ -699,9 +742,16 @@ def build_readiness_report(
         "teacher_live_agreement_rows": len(agreements),
         "teacher_approval_rate": round(approval_rate, 6),
         "teacher_agreement_rate": round(agreement_rate, 6),
+        "teacher_unique_files": len(approved_unique_files),
+        "teacher_extensions": approved_extensions,
+        "teacher_labels": approved_labels,
+        "teacher_parsers": approved_parsers,
         "queue_depth": queue_depth,
         "thresholds": {
             "readiness_min_teacher_samples": min_samples,
+            "readiness_min_unique_teacher_files": min_unique_files,
+            "readiness_min_teacher_extensions": min_extensions,
+            "readiness_min_teacher_labels": min_labels,
             "readiness_min_teacher_agreement_rate": min_agreement,
             "readiness_min_teacher_approval_rate": min_approval,
             "readiness_max_queue_depth": max_queue_depth,

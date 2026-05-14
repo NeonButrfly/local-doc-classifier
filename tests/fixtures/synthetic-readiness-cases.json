@@ -1,0 +1,151 @@
+{
+  "suite_name": "synthetic-readiness-v1",
+  "description": "Broader synthetic corpus for autonomous-readiness sweeps before any real-folder ingestion is enabled.",
+  "cases": [
+    {
+      "id": "fixture-legal-pdf",
+      "kind": "fixture",
+      "source": {
+        "kind": "fixture",
+        "path": "tests/fixtures/synthetic_vendor_service_agreement.pdf"
+      },
+      "acceptable_primary_labels": ["legal", "contract", "policy", "work"],
+      "expected_secondary_any": ["legal", "contract", "policy", "work"],
+      "forbidden_primary_labels": ["receipt", "invoice", "reference-image", "medical", "identity-document"]
+    },
+    {
+      "id": "fixture-technical-docx",
+      "kind": "fixture",
+      "source": {
+        "kind": "fixture",
+        "path": "tests/fixtures/synthetic_network_incident_report.docx"
+      },
+      "acceptable_primary_labels": ["technical", "work", "report", "policy"],
+      "expected_secondary_any": ["technical", "work", "report", "policy"],
+      "forbidden_primary_labels": ["receipt", "invoice", "legal", "reference-image", "medical", "identity-document"]
+    },
+    {
+      "id": "fixture-financial-xlsx",
+      "kind": "fixture",
+      "source": {
+        "kind": "fixture",
+        "path": "tests/fixtures/synthetic_quarterly_budget_forecast.xlsx"
+      },
+      "acceptable_primary_labels": ["financial", "spreadsheet", "work", "report"],
+      "expected_secondary_any": ["financial", "spreadsheet", "work", "report"],
+      "forbidden_primary_labels": ["reference-image", "concept-art", "legal", "medical", "identity-document"]
+    },
+    {
+      "id": "fixture-reference-image",
+      "kind": "fixture",
+      "source": {
+        "kind": "fixture",
+        "path": "tests/fixtures/synthetic_snowy_industrial_waystation_reference.jpg"
+      },
+      "acceptable_primary_labels": ["reference-image", "concept-art", "environment-art", "image-only"],
+      "expected_secondary_any": ["concept-art", "environment-art", "industrial", "sci-fi", "snow-ice", "facility", "waystation", "architecture"],
+      "forbidden_primary_labels": ["receipt", "invoice", "legal", "medical", "insurance", "tax", "financial", "identity-document", "technical", "marketing"]
+    },
+    {
+      "id": "generated-legal-text",
+      "kind": "generated",
+      "source": {
+        "kind": "text",
+        "filename": "synthetic_master_service_agreement.txt",
+        "content": "Synthetic Master Service Agreement\nVendor: Aurora Demo Hosting LLC\nClient: Northstar Test Operations\nScope of Services\nThe vendor will provide monitoring, maintenance, and alerting services for the synthetic environment.\nTerm\nThe agreement begins on January 1 and continues for twelve months.\nPayment\nClient will pay a monthly fee according to the statement of work.\nConfidentiality\nBoth parties will protect confidential information and restrict disclosure.\nLimitation of Liability\nLiability is limited to the fees paid during the prior quarter.\nGoverning Law\nThis agreement is governed by Alaska law.\n"
+      },
+      "acceptable_primary_labels": ["legal", "contract", "policy", "work"],
+      "expected_secondary_any": ["legal", "contract", "policy", "work"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-policy-markdown",
+      "kind": "generated",
+      "source": {
+        "kind": "markdown",
+        "filename": "synthetic_access_control_policy.md",
+        "content": "# Synthetic Access Control Policy\n## Purpose\nDefine baseline access controls for the local classifier environment.\n## Scope\nApplies to operators, support users, and service accounts.\n## Policy\nUse least privilege, rotate credentials, log access changes, and require change approval for production access.\n## Procedure\nReview access monthly, remove stale accounts, and document emergency elevation.\n## Enforcement\nViolations are reviewed by operations leadership.\n"
+      },
+      "acceptable_primary_labels": ["policy", "work", "technical", "legal"],
+      "expected_secondary_any": ["policy", "work", "technical"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-incident-html",
+      "kind": "generated",
+      "source": {
+        "kind": "html",
+        "filename": "synthetic_incident_postmortem.html",
+        "content": "<html><body><h1>Synthetic Incident Postmortem</h1><p>Severity: High</p><p>Environment: Production-like lab</p><p>Timeline: Alert fired at 09:14, rollback completed at 09:27.</p><p>Root Cause: Misrouted BGP advertisements caused packet loss between edge routers.</p><p>Corrective Actions: Tighten route filters, update the runbook, and validate rollback procedures weekly.</p></body></html>"
+      },
+      "acceptable_primary_labels": ["report", "technical", "work", "policy"],
+      "expected_secondary_any": ["report", "technical", "work", "policy"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-budget-csv",
+      "kind": "generated",
+      "source": {
+        "kind": "csv",
+        "filename": "synthetic_department_budget.csv",
+        "rows": [
+          ["Department", "Category", "Q1 Actual", "Q2 Forecast", "Q3 Forecast", "Q4 Forecast", "Variance Note"],
+          ["Operations", "Cloud Hosting", "12500", "13800", "14200", "15100", "Synthetic hosting growth"],
+          ["Security", "Awareness Training", "3000", "5200", "2500", "2500", "Mock annual campaign"],
+          ["Facilities", "Lab Equipment", "8800", "3100", "2200", "2100", "Demo hardware refresh"]
+        ]
+      },
+      "acceptable_primary_labels": ["financial", "work", "report", "technical"],
+      "expected_secondary_any": ["financial", "work", "report"],
+      "forbidden_primary_labels": ["reference-image", "legal", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-project-status-text",
+      "kind": "generated",
+      "source": {
+        "kind": "text",
+        "filename": "synthetic_project_status_report.txt",
+        "content": "Synthetic Weekly Project Status Report\nOwner: Platform Team\nStatus: On track\nCompleted this week: taxonomy sync cleanup, benchmark endpoint validation, and readiness report wiring.\nCurrent blockers: waiting for broader teacher-approved synthetic coverage.\nNext steps: execute readiness sweep, review disagreements, and finalize ingestion enablement checklist.\n"
+      },
+      "acceptable_primary_labels": ["report", "work", "policy", "technical"],
+      "expected_secondary_any": ["report", "work", "technical"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-architecture-markdown",
+      "kind": "generated",
+      "source": {
+        "kind": "markdown",
+        "filename": "synthetic_classifier_architecture.md",
+        "content": "# Synthetic Classifier Architecture Notes\n- FastAPI upload endpoint receives files and stages them to the input area.\n- The taxonomy router narrows public categories before the model prompt is built.\n- LightGBM predicts likely labels and disagreement risk.\n- The shadow LLM reviews queued records and approves training rows.\n- Retraining updates the local routing model without editing source code.\n"
+      },
+      "acceptable_primary_labels": ["technical", "work", "report", "policy"],
+      "expected_secondary_any": ["technical", "work", "report"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-runbook-html",
+      "kind": "generated",
+      "source": {
+        "kind": "html",
+        "filename": "synthetic_recovery_runbook.html",
+        "content": "<html><body><h1>Synthetic Recovery Runbook</h1><p>Purpose: restore the classifier API after an outage.</p><p>Procedure: verify health, rebuild the API image, restart the service, and confirm categories plus corrections endpoints.</p><p>Validation: upload synthetic fixtures, inspect disagreements, and log the change in operations notes.</p></body></html>"
+      },
+      "acceptable_primary_labels": ["policy", "technical", "work", "report"],
+      "expected_secondary_any": ["policy", "technical", "work"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    },
+    {
+      "id": "generated-vendor-policy-text",
+      "kind": "generated",
+      "source": {
+        "kind": "text",
+        "filename": "synthetic_vendor_review_policy.txt",
+        "content": "Synthetic Vendor Review Policy\nPurpose: define how the team approves new software vendors.\nPolicy: collect security questionnaires, review terms, confirm retention limits, and document business justification.\nProcedure: operations and legal review the request before contract execution.\nReview cycle: every six months.\n"
+      },
+      "acceptable_primary_labels": ["policy", "legal", "work", "contract"],
+      "expected_secondary_any": ["policy", "legal", "work", "contract"],
+      "forbidden_primary_labels": ["reference-image", "receipt", "invoice", "medical", "identity-document"]
+    }
+  ]
+}
