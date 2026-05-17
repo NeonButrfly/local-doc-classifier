@@ -7,6 +7,11 @@ cd /opt/local-doc-classifier
 docker compose up -d ollama api
 ```
 
+If the vault is stored on a separate path, the active location is whatever
+`VAULT_DIR` is set to in `/opt/local-doc-classifier/.env`. For an NFS-backed
+vault, the installer can mount a remote export first and then point `VAULT_DIR`
+at a subdirectory under that mount.
+
 ## Rebuild API
 
 ```bash
@@ -90,4 +95,13 @@ Then retrain router and rebuild API.
 
 ```bash
 /opt/local-doc-classifier/scripts/reset-vault-and-index.sh
+```
+
+## Example NFS-backed vault settings
+
+```dotenv
+APP_DIR=/opt/local-doc-classifier
+VAULT_NFS_REMOTE=192.168.50.86:/srv/cloud-vault
+VAULT_NFS_MOUNT_DIR=/mnt/cloud-vault
+VAULT_DIR=/mnt/cloud-vault/local-doc-classifier-vault
 ```

@@ -29,6 +29,20 @@ Default Obsidian vault:
 /opt/local-doc-classifier/vault
 ```
 
+The deployment can also override this with:
+
+```text
+VAULT_DIR=/some/other/path
+```
+
+For an NFS-backed vault, set for example:
+
+```text
+VAULT_NFS_REMOTE=192.168.50.86:/srv/cloud-vault
+VAULT_NFS_MOUNT_DIR=/mnt/cloud-vault
+VAULT_DIR=/mnt/cloud-vault/local-doc-classifier-vault
+```
+
 ## What this repo contains
 
 ```text

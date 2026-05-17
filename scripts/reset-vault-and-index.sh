@@ -2,20 +2,29 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/local-doc-classifier}"
+if [[ -f "${APP_DIR}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${APP_DIR}/.env"
+  set +a
+fi
+VAULT_DIR="${VAULT_DIR:-${APP_DIR}/vault}"
 BACKUP_ROOT="${BACKUP_ROOT:-/opt/local-doc-classifier-backups}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/reset-${STAMP}"
 
 echo "[INFO] This will reset generated classifier index/vault outputs."
 echo "[INFO] App dir: ${APP_DIR}"
+echo "[INFO] Vault dir: ${VAULT_DIR}"
 echo "[INFO] Backup dir: ${BACKUP_DIR}"
 
 mkdir -p "${BACKUP_DIR}"
 
 echo "[INFO] Backing up vault, output, and input..."
 tar -czf "${BACKUP_DIR}/vault-output-input-${STAMP}.tar.gz" \
+  -C "$(dirname "${VAULT_DIR}")" \
+  "$(basename "${VAULT_DIR}")" \
   -C "${APP_DIR}" \
-  vault \
   output \
   input \
   2>/dev/null || true
@@ -25,21 +34,21 @@ cd "${APP_DIR}"
 docker compose stop api >/dev/null 2>&1 || true
 
 echo "[INFO] Clearing generated Obsidian vault content..."
-rm -rf "${APP_DIR}/vault/01 Classified"
-rm -rf "${APP_DIR}/vault/02 Needs Review"
-rm -rf "${APP_DIR}/vault/90 Attachments"
-rm -rf "${APP_DIR}/vault/_system/classifications"
-rm -rf "${APP_DIR}/vault/_system/extracted-markdown"
-rm -f  "${APP_DIR}/vault/Classification Index.md"
+rm -rf "${VAULT_DIR}/01 Classified"
+rm -rf "${VAULT_DIR}/02 Needs Review"
+rm -rf "${VAULT_DIR}/90 Attachments"
+rm -rf "${VAULT_DIR}/_system/classifications"
+rm -rf "${VAULT_DIR}/_system/extracted-markdown"
+rm -f  "${VAULT_DIR}/Classification Index.md"
 
-mkdir -p "${APP_DIR}/vault/01 Classified"
-mkdir -p "${APP_DIR}/vault/02 Needs Review"
-mkdir -p "${APP_DIR}/vault/90 Attachments"
-mkdir -p "${APP_DIR}/vault/_system/classifications"
-mkdir -p "${APP_DIR}/vault/_system/extracted-markdown"
-mkdir -p "${APP_DIR}/vault/_system/templates"
+mkdir -p "${VAULT_DIR}/01 Classified"
+mkdir -p "${VAULT_DIR}/02 Needs Review"
+mkdir -p "${VAULT_DIR}/90 Attachments"
+mkdir -p "${VAULT_DIR}/_system/classifications"
+mkdir -p "${VAULT_DIR}/_system/extracted-markdown"
+mkdir -p "${VAULT_DIR}/_system/templates"
 
-cat > "${APP_DIR}/vault/Classification Index.md" <<'MD'
+cat > "${VAULT_DIR}/Classification Index.md" <<'MD'
 ---
 type: classification-index
 system: local-document-classifier
@@ -56,7 +65,7 @@ MD
 python3 - <<PY
 from pathlib import Path
 from datetime import datetime
-p = Path("${APP_DIR}/vault/Classification Index.md")
+p = Path("${VAULT_DIR}/Classification Index.md")
 s = p.read_text()
 s = s.replace("RESET_TIMESTAMP", datetime.now().astimezone().isoformat(timespec="seconds"))
 p.write_text(s)

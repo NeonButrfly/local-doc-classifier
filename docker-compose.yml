@@ -52,7 +52,7 @@ services:
     volumes:
       - ${APP_DIR}/input:/input
       - ${APP_DIR}/output:/output
-      - ${APP_DIR}/vault:/vault
+      - ${VAULT_DIR}:/vault
       - ${APP_DIR}/cache:/root/.cache
       - ${APP_DIR}/logs:/logs
       - ${APP_DIR}/tmp:/tmp/work
@@ -79,7 +79,7 @@ services:
     volumes:
       - ${APP_DIR}/input:/input
       - ${APP_DIR}/output:/output
-      - ${APP_DIR}/vault:/vault
+      - ${VAULT_DIR}:/vault
       - ${APP_DIR}/cache:/root/.cache
       - ${APP_DIR}/logs:/logs
       - ${APP_DIR}/tmp:/tmp/work
