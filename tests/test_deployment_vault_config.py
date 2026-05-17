@@ -24,6 +24,13 @@ class DeploymentVaultConfigTests(unittest.TestCase):
         self.assertIn("VAULT_NFS_REMOTE=", script_text)
         self.assertIn("nfs-common", script_text)
 
+    def test_install_script_preserves_explicit_env_overrides(self):
+        script_text = (REPO_ROOT / "scripts" / "install-or-update.sh").read_text(encoding="utf-8")
+
+        self.assertIn("APP_DIR_OVERRIDE", script_text)
+        self.assertIn("VAULT_DIR_OVERRIDE", script_text)
+        self.assertIn("VAULT_NFS_REMOTE_OVERRIDE", script_text)
+
     def test_install_script_does_not_echo_live_api_token(self):
         script_text = (REPO_ROOT / "scripts" / "install-or-update.sh").read_text(encoding="utf-8")
 

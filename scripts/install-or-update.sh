@@ -2,7 +2,12 @@
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="${APP_DIR:-/opt/local-doc-classifier}"
+APP_DIR_OVERRIDE="${APP_DIR:-}"
+VAULT_DIR_OVERRIDE="${VAULT_DIR:-}"
+VAULT_NFS_REMOTE_OVERRIDE="${VAULT_NFS_REMOTE:-}"
+VAULT_NFS_MOUNT_DIR_OVERRIDE="${VAULT_NFS_MOUNT_DIR:-}"
+VAULT_NFS_OPTIONS_OVERRIDE="${VAULT_NFS_OPTIONS:-}"
+APP_DIR="${APP_DIR_OVERRIDE:-/opt/local-doc-classifier}"
 
 if [[ -f "${APP_DIR}/.env" ]]; then
   set -a
@@ -11,15 +16,15 @@ if [[ -f "${APP_DIR}/.env" ]]; then
   set +a
 fi
 
-APP_DIR="${APP_DIR:-/opt/local-doc-classifier}"
-VAULT_NFS_REMOTE="${VAULT_NFS_REMOTE:-}"
-VAULT_NFS_MOUNT_DIR="${VAULT_NFS_MOUNT_DIR:-/mnt/cloud-vault}"
-VAULT_NFS_OPTIONS="${VAULT_NFS_OPTIONS:-defaults,_netdev,nofail,x-systemd.automount,x-systemd.idle-timeout=600,x-systemd.device-timeout=30,timeo=14,retrans=3}"
+APP_DIR="${APP_DIR_OVERRIDE:-${APP_DIR:-/opt/local-doc-classifier}}"
+VAULT_NFS_REMOTE="${VAULT_NFS_REMOTE_OVERRIDE:-${VAULT_NFS_REMOTE:-}}"
+VAULT_NFS_MOUNT_DIR="${VAULT_NFS_MOUNT_DIR_OVERRIDE:-${VAULT_NFS_MOUNT_DIR:-/mnt/cloud-vault}}"
+VAULT_NFS_OPTIONS="${VAULT_NFS_OPTIONS_OVERRIDE:-${VAULT_NFS_OPTIONS:-defaults,_netdev,nofail,x-systemd.automount,x-systemd.idle-timeout=600,x-systemd.device-timeout=30,timeo=14,retrans=3}}"
 
 if [[ -n "${VAULT_NFS_REMOTE}" ]]; then
-  VAULT_DIR="${VAULT_DIR:-${VAULT_NFS_MOUNT_DIR}/local-doc-classifier-vault}"
+  VAULT_DIR="${VAULT_DIR_OVERRIDE:-${VAULT_DIR:-${VAULT_NFS_MOUNT_DIR}/local-doc-classifier-vault}}"
 else
-  VAULT_DIR="${VAULT_DIR:-${APP_DIR}/vault}"
+  VAULT_DIR="${VAULT_DIR_OVERRIDE:-${VAULT_DIR:-${APP_DIR}/vault}}"
 fi
 
 if [[ "${EUID}" -ne 0 ]]; then
