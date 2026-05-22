@@ -97,6 +97,59 @@ def yaml_list(items: List[Any]) -> str:
         return "[]"
     return "[" + ", ".join(json.dumps(str(x), ensure_ascii=False) for x in items) + "]"
 
+
+def build_note_contract_metadata(
+    *,
+    source_path: Path,
+    file_hash: str,
+    attachment_link: str,
+    canonical_source_path: str | None = None,
+    canonical_source_hash: str | None = None,
+    last_seen_filename: str | None = None,
+) -> Dict[str, str]:
+    return {
+        "canonical_source_path": canonical_source_path or str(source_path),
+        "canonical_source_hash": canonical_source_hash or file_hash,
+        "last_seen_filename": last_seen_filename or source_path.name,
+        "attachment_mode": "copied-compatibility" if attachment_link else "none",
+        "compatibility_attachment_path": attachment_link,
+    }
+
+
+def build_summary_fallback(
+    *,
+    summary: str,
+    source_path: Path,
+    confidence: float,
+    needs_review: bool,
+) -> str:
+    cleaned_summary = str(summary or "").strip()
+    if cleaned_summary:
+        return cleaned_summary
+    if needs_review:
+        return (
+            f"Review needed for {source_path.name} because the classifier confidence "
+            f"was {confidence:.2f} and the result still needs verification."
+        )
+    return f"Automatically classified {source_path.name} without a generated summary."
+
+
+def build_reason_fallback(
+    *,
+    reason: str,
+    needs_review: bool,
+    primary_label: str,
+) -> str:
+    cleaned_reason = str(reason or "").strip()
+    if cleaned_reason:
+        return cleaned_reason
+    if needs_review:
+        return (
+            "This file was routed to Needs Review because the classifier could not "
+            "make a confident decision."
+        )
+    return f"No additional classifier reasoning was provided for {primary_label}."
+
 def iter_input_files(path: Path) -> Iterable[Path]:
     if path.is_file():
         if path.suffix.lower() in SUPPORTED_EXTENSIONS:
@@ -942,6 +995,9 @@ def write_obsidian_note(
     markdown: Optional[str],
     classification: Dict[str, Any],
     attach_originals: bool,
+    canonical_source_path: str | None = None,
+    canonical_source_hash: str | None = None,
+    last_seen_filename: str | None = None,
 ) -> Path:
     # --- image-normalize-before-note BEGIN ---
     try:
@@ -969,6 +1025,17 @@ def write_obsidian_note(
         confidence = 0.0
 
     needs_review = confidence < 0.70 or primary == "unknown"
+    summary = build_summary_fallback(
+        summary=str(summary or ""),
+        source_path=source_path,
+        confidence=confidence,
+        needs_review=needs_review,
+    )
+    reason = build_reason_fallback(
+        reason=str(reason or ""),
+        needs_review=needs_review,
+        primary_label=primary,
+    )
 
     if needs_review:
         note_dir = vault / "02 Needs Review"
@@ -996,6 +1063,14 @@ def write_obsidian_note(
         if not copied.exists():
             shutil.copy2(source_path, copied)
         attachment_link = f"[[{copied.relative_to(vault).as_posix()}]]"
+    note_contract = build_note_contract_metadata(
+        source_path=source_path,
+        file_hash=file_hash,
+        attachment_link=attachment_link,
+        canonical_source_path=canonical_source_path,
+        canonical_source_hash=canonical_source_hash,
+        last_seen_filename=last_seen_filename,
+    )
 
     tags = [f"classified/{obsidian_tag(primary)}"]
 
@@ -1018,6 +1093,11 @@ secondary_labels: {yaml_list(secondary)}
 confidence: {confidence}
 source_file: {json.dumps(str(source_path), ensure_ascii=False)}
 sha256: {json.dumps(file_hash)}
+canonical_source_path: {json.dumps(note_contract["canonical_source_path"], ensure_ascii=False)}
+canonical_source_hash: {json.dumps(note_contract["canonical_source_hash"], ensure_ascii=False)}
+last_seen_filename: {json.dumps(note_contract["last_seen_filename"], ensure_ascii=False)}
+attachment_mode: {json.dumps(note_contract["attachment_mode"], ensure_ascii=False)}
+compatibility_attachment_path: {json.dumps(note_contract["compatibility_attachment_path"], ensure_ascii=False)}
 classified_at: {json.dumps(now_ak())}
 file_date_guess: {json.dumps(file_date_guess, ensure_ascii=False)}
 language: {json.dumps(language, ensure_ascii=False)}
@@ -1128,6 +1208,9 @@ def main() -> int:
     parser.add_argument("--process-shadow-queue", action="store_true")
     parser.add_argument("--retrain-hybrid-model", action="store_true")
     parser.add_argument("--write-readiness-report", action="store_true")
+    parser.add_argument("--canonical-source-path", default="")
+    parser.add_argument("--canonical-source-hash", default="")
+    parser.add_argument("--last-seen-filename", default="")
 
     args = parser.parse_args()
 
@@ -1317,6 +1400,9 @@ def main() -> int:
                     markdown=markdown,
                     classification=classification,
                     attach_originals=args.attach_originals,
+                    canonical_source_path=args.canonical_source_path or None,
+                    canonical_source_hash=args.canonical_source_hash or None,
+                    last_seen_filename=args.last_seen_filename or None,
                 )
                 timing["note_write_ms"] = elapsed_ms(note_started_at)
                 timing["primary_label"] = classification.get("primary_label", "unknown")
@@ -1331,6 +1417,18 @@ def main() -> int:
                     "source_path": str(source_path),
                     "sha256": file_hash,
                     "note_path": str(note_path),
+                    **build_note_contract_metadata(
+                        source_path=source_path,
+                        file_hash=file_hash,
+                        attachment_link=(
+                            f"[[90 Attachments/{obsidian_tag(str(classification.get('primary_label', 'unknown') or 'unknown'))}/{source_path.name}]]"
+                            if args.attach_originals
+                            else ""
+                        ),
+                        canonical_source_path=args.canonical_source_path or None,
+                        canonical_source_hash=args.canonical_source_hash or None,
+                        last_seen_filename=args.last_seen_filename or None,
+                    ),
                     "classification": classification,
                     "hybrid": hybrid_meta if ext not in IMAGE_EXTENSIONS or args.no_vision else None,
                     "timing": timing,

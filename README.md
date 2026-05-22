@@ -43,6 +43,15 @@ VAULT_NFS_MOUNT_DIR=/mnt/cloud-vault
 VAULT_DIR=/mnt/cloud-vault/local-doc-classifier-vault
 ```
 
+## Current note behavior
+
+- generated notes now carry canonical live-file metadata in frontmatter:
+  canonical source path, canonical source hash, last-seen filename, attachment
+  mode, and compatibility attachment path
+- `90 Attachments` is still used as a compatibility layer in this rollout
+- low-confidence and `unknown` review notes now get fallback summary and reason
+  text instead of landing with blank sections
+
 ## What this repo contains
 
 ```text

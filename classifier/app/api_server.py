@@ -217,6 +217,9 @@ async def classify_upload(
     attach_originals: bool = Form(default=True),
     no_vision: bool = Form(default=False),
     ingestion_mode: str = Form(default="adhoc"),
+    canonical_source_path: Optional[str] = Form(default=None),
+    canonical_source_hash: Optional[str] = Form(default=None),
+    last_seen_filename: Optional[str] = Form(default=None),
     x_api_key: Optional[str] = Header(default=None),
 ):
     check_token(x_api_key)
@@ -255,6 +258,12 @@ async def classify_upload(
 
     if categories:
         cmd.extend(["--categories", categories])
+    if canonical_source_path:
+        cmd.extend(["--canonical-source-path", canonical_source_path])
+    if canonical_source_hash:
+        cmd.extend(["--canonical-source-hash", canonical_source_hash])
+    if last_seen_filename:
+        cmd.extend(["--last-seen-filename", last_seen_filename])
 
     classify_started_at = time.perf_counter()
     with REQUEST_LOCK:

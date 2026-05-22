@@ -29,6 +29,15 @@ curl -sS \
 
 Important: include `filename=...` or image extension handling may fail.
 
+Optional form fields for mirrored-drive callers:
+
+- `canonical_source_path`: the live mirrored file path that should be recorded
+  in note metadata instead of the temporary upload staging path
+- `canonical_source_hash`: caller-provided canonical file hash for later
+  reconciliation
+- `last_seen_filename`: caller-provided live filename when it differs from the
+  temporary upload name
+
 The response also includes:
 
 - `upload_ms`: server-side time spent receiving and staging the multipart upload
